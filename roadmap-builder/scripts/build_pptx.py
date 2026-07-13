@@ -29,6 +29,29 @@ def rgb(hexcode):
     return RGBColor.from_string(hexcode)
 
 
+EMU_PER_IN = 914400
+
+
+def fit_bar_text(text, w, h, sizes=(8.5, 7.5, 6.5)):
+    """Подбирает размер шрифта, чтобы текст влез в плашку w×h (EMU).
+
+    Если не влезает даже минимальным — усекает с многоточием.
+    Оценка ширины символа ~0.55·size pt (кириллица), высоты строки ~1.25·size pt.
+    """
+    if not text:
+        return text, sizes[0]
+    w_in = max(0.1, w / EMU_PER_IN - 0.06)  # минус внутренние поля
+    h_in = max(0.08, h / EMU_PER_IN - 0.02)
+    cpl = lines = 1
+    for size in sizes:
+        cpl = max(1, int(w_in / (size * 0.55 / 72)))
+        lines = max(1, int(h_in / (size * 1.25 / 72)))
+        if len(text) <= cpl * lines:
+            return text, size
+    cap = max(1, cpl * lines - 1)
+    return text[:cap] + "…", sizes[-1]
+
+
 def add_box(slide, x, y, w, h, fill_hex=None, line_hex=None, text="", size=9,
             bold=False, color=STYLE["text"], align=PP_ALIGN.CENTER,
             shape=MSO_SHAPE.RECTANGLE, line_w=0.75):
@@ -130,21 +153,41 @@ def main(json_path, out_path):
             add_box(slide, MARGIN + GROUP_W, ry, LABEL_W, ROW_H, text=row.get("label", ""),
                     size=8, align=PP_ALIGN.LEFT)
 
+            occupied = set()
             for item in row.get("items", []):
                 t = item.get("type")
                 if t == "bar":
-                    i0 = tl.week_index(item["start"])
-                    i1 = tl.week_index(item["end"])
-                    if i1 < i0:
-                        i0, i1 = i1, i0
+                    clip = tl.clip_bar(item["start"], item["end"])
+                    if clip is None:
+                        print(f"! полоса '{item.get('label')}' в строке '{row.get('label')}' "
+                              f"целиком вне диапазона roadmap — пропущена")
+                        continue
+                    i0, i1, cut_l, cut_r = clip
+                    if any(i in occupied for i in range(i0, i1 + 1)):
+                        print(f"! перекрытие в строке '{row.get('label')}': "
+                              f"полоса '{item.get('label')}' налезает на соседний элемент")
+                    occupied.update(range(i0, i1 + 1))
+                    label = item.get("label", "")
+                    if cut_r:
+                        label = (label + " →") if label else "→"
+                    if cut_l:
+                        label = ("← " + label) if label else "←"
+                    bw = week_w * (i1 - i0 + 1) - Emu(40000)
+                    bh = ROW_H - Inches(0.1)
+                    label, size = fit_bar_text(label, bw, bh)
                     style = item.get("style", "work")
                     add_box(slide, week_x(i0) + Emu(20000), ry + Inches(0.05),
-                            week_w * (i1 - i0 + 1) - Emu(40000), ROW_H - Inches(0.1),
+                            bw, bh,
                             fill_hex=STYLE[f"bar_{style}_fill"], line_hex=STYLE[f"bar_{style}_line"],
-                            text=item.get("label", ""), size=8.5,
+                            text=label, size=size,
                             shape=MSO_SHAPE.ROUNDED_RECTANGLE)
                 elif t == "milestone":
-                    i0 = tl.week_index(item["date"])
+                    i0 = tl.week_index(item["date"], clamp=False)
+                    if i0 is None:
+                        print(f"! веха '{item.get('label', item['date'])}' в строке "
+                              f"'{row.get('label')}' вне диапазона roadmap — пропущена")
+                        continue
+                    occupied.add(i0)
                     status = item.get("status", "done")
                     d = Inches(0.16)
                     cx = week_x(i0) + int(week_w / 2) - int(d / 2)
@@ -154,10 +197,15 @@ def main(json_path, out_path):
                             fill_hex=fill_hex, line_hex=line_hex, shape=MSO_SHAPE.DIAMOND,
                             line_w=1.25)
                     if item.get("label"):
-                        add_box(slide, cx + d, ry, week_w * 2, ROW_H, text=item["label"],
-                                size=8, align=PP_ALIGN.LEFT)
+                        lw = min(week_w * 2, week_x(tl.n) - (cx + d))
+                        ltext, lsize = fit_bar_text(item["label"], lw, ROW_H, sizes=(8, 7))
+                        add_box(slide, cx + d, ry, lw, ROW_H, text=ltext,
+                                size=lsize, align=PP_ALIGN.LEFT)
                 elif t == "note":
-                    i0 = tl.week_index(item["date"])
+                    i0 = tl.week_index(item["date"], clamp=False)
+                    if i0 is None:
+                        print(f"! выноска '{item['text'][:30]}…' вне диапазона roadmap — пропущена")
+                        continue
                     w = min(week_w * 4, week_x(tl.n) - week_x(i0))
                     add_box(slide, week_x(i0), ry + Inches(0.03), w, ROW_H - Inches(0.06),
                             fill_hex=STYLE["note_fill"], line_hex=STYLE["note_line"],
@@ -179,19 +227,24 @@ def main(json_path, out_path):
             ln.line.color.rgb = rgb(STYLE["today_line"])
             ln.line.width = Pt(1.75)
 
-        # Легенда внизу
+        # Легенда внизу: цветной значок (фигура) + подпись тёмным текстом
         ly = grid_top + grid_h + Inches(0.12)
         if ly + Inches(0.25) < SLIDE_H:
-            items = [("◆", STYLE["milestone_done_fill"], "выполнено"),
-                     ("◇", STYLE["milestone_planned_line"], "план"),
-                     ("▬", STYLE["bar_work_fill"], "работы"),
-                     ("▬", STYLE["bar_estimate_fill"], "оценка т/з"),
-                     ("▬", STYLE["bar_vacation_fill"], "отпуск")]
+            items = [
+                (MSO_SHAPE.DIAMOND, STYLE["milestone_done_fill"], STYLE["milestone_done_line"], "выполнено"),
+                (MSO_SHAPE.DIAMOND, STYLE["milestone_planned_fill"], STYLE["milestone_planned_line"], "план"),
+                (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_work_fill"], STYLE["bar_work_line"], "работы"),
+                (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_estimate_fill"], STYLE["bar_estimate_line"], "оценка т/з"),
+                (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_vacation_fill"], STYLE["bar_vacation_line"], "отпуск"),
+            ]
             x = MARGIN
-            for sym, color, label in items:
-                add_box(slide, x, ly, Inches(1.5), Inches(0.22),
-                        text=f"{sym} {label}", size=8, color=color, align=PP_ALIGN.LEFT)
-                x += Inches(1.55)
+            for shape, fill_hex, line_hex, label in items:
+                sym_w = Inches(0.13) if shape == MSO_SHAPE.DIAMOND else Inches(0.3)
+                add_box(slide, x, ly + Inches(0.045), sym_w, Inches(0.13),
+                        fill_hex=fill_hex, line_hex=line_hex, shape=shape, line_w=1.0)
+                add_box(slide, x + sym_w + Inches(0.04), ly, Inches(1.1), Inches(0.22),
+                        text=label, size=8, color=STYLE["text"], align=PP_ALIGN.LEFT)
+                x += sym_w + Inches(1.25)
 
     prs.save(out_path)
     print(f"OK: {out_path} — {len(rows)} строк, {len(pages)} слайдов, {tl.n} недель")

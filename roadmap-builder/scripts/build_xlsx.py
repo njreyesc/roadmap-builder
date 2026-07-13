@@ -97,17 +97,33 @@ def main(json_path, out_path):
         for item in row.get("items", []):
             t = item.get("type")
             if t == "bar":
-                i0 = tl.week_index(item["start"])
-                i1 = tl.week_index(item["end"])
-                if i1 < i0:
-                    i0, i1 = i1, i0
+                clip = tl.clip_bar(item["start"], item["end"])
+                if clip is None:
+                    print(f"! полоса '{item.get('label')}' в строке '{row.get('label')}' "
+                          f"целиком вне диапазона roadmap — пропущена")
+                    continue
+                i0, i1, cut_l, cut_r = clip
+                label = item.get("label", "")
+                if cut_r:
+                    label = (label + " →") if label else "→"
+                if cut_l:
+                    label = ("← " + label) if label else "←"
                 c0, c1 = FIRST_WEEK_COL + i0, FIRST_WEEK_COL + i1
                 if any(c in occupied for c in range(c0, c1 + 1)):
-                    print(f"! перекрытие в строке '{row.get('label')}', полоса '{item.get('label')}' пропущена частично")
+                    print(f"! перекрытие в строке '{row.get('label')}', полоса '{item.get('label')}' обрезана до свободных недель")
+                    while c0 <= c1 and c0 in occupied:  # сдвигаем начало до свободной колонки
+                        c0 += 1
+                    end = c0
+                    while end + 1 <= c1 and end + 1 not in occupied:
+                        end += 1
+                    c1 = end
+                    if c0 > c1:
+                        print(f"!   свободных недель не осталось — полоса пропущена")
+                        continue
                 if c1 > c0:
                     ws.merge_cells(start_row=r, start_column=c0, end_row=r, end_column=c1)
                 bar_fill, font_color = bar_styles.get(item.get("style", "work"), bar_styles["work"])
-                cell = ws.cell(row=r, column=c0, value=item.get("label", ""))
+                cell = ws.cell(row=r, column=c0, value=label)
                 cell.alignment = center
                 cell.font = Font(size=9, color=font_color)
                 for c in range(c0, c1 + 1):
@@ -115,7 +131,11 @@ def main(json_path, out_path):
                     ws.cell(row=r, column=c).border = thin_border(bar_styles.get(item.get("style", "work"))[0])
                     occupied.add(c)
             elif t == "milestone":
-                i0 = tl.week_index(item["date"])
+                i0 = tl.week_index(item["date"], clamp=False)
+                if i0 is None:
+                    print(f"! веха '{item.get('label', item['date'])}' в строке "
+                          f"'{row.get('label')}' вне диапазона roadmap — пропущена")
+                    continue
                 c0 = FIRST_WEEK_COL + i0
                 status = item.get("status", "done")
                 color = STYLE["milestone_done_fill"] if status == "done" else STYLE["milestone_planned_line"]
@@ -127,7 +147,10 @@ def main(json_path, out_path):
                 cell.alignment = center
                 occupied.add(c0)
             elif t == "note":
-                i0 = tl.week_index(item["date"])
+                i0 = tl.week_index(item["date"], clamp=False)
+                if i0 is None:
+                    print(f"! выноска '{item['text'][:30]}…' вне диапазона roadmap — пропущена")
+                    continue
                 c0 = FIRST_WEEK_COL + i0
                 cell = ws.cell(row=r, column=c0)
                 # выноска — комментарий + голубая метка, чтобы не воевать за место с полосами

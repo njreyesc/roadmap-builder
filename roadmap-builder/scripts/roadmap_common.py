@@ -58,13 +58,30 @@ class Timeline:
 
     def week_index(self, d, clamp=True):
         """Индекс недели для даты (0-based). clamp — прижать к границам."""
-        d = parse_date(d) if isinstance(d, str) else d
-        i = (monday(d) - self.start).days // 7
+        i = self.week_index_raw(d)
         if clamp:
             i = max(0, min(self.n - 1, i))
         elif i < 0 or i >= self.n:
             return None
         return i
+
+    def week_index_raw(self, d):
+        """Индекс недели без прижатия к границам (может быть <0 или >= n)."""
+        d = parse_date(d) if isinstance(d, str) else d
+        return (monday(d) - self.start).days // 7
+
+    def clip_bar(self, start, end):
+        """Видимый диапазон полосы (i0, i1) и маркеры выхода за границы.
+
+        Возвращает (i0, i1, cut_left, cut_right) либо None, если полоса
+        целиком вне диапазона roadmap.
+        """
+        r0, r1 = self.week_index_raw(start), self.week_index_raw(end)
+        if r1 < r0:
+            r0, r1 = r1, r0
+        if r1 < 0 or r0 >= self.n:
+            return None
+        return max(0, r0), min(self.n - 1, r1), r0 < 0, r1 > self.n - 1
 
     def week_label(self, i):
         w = self.weeks[i]
