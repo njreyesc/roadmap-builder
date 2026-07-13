@@ -11,7 +11,7 @@ from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
-from roadmap_common import STYLE, flatten_rows, load_roadmap
+from roadmap_common import STYLE, flatten_rows, group_label, load_roadmap
 
 SLIDE_W = Inches(13.333)
 SLIDE_H = Inches(7.5)
@@ -157,7 +157,7 @@ def main(json_path, out_path):
             for item in row.get("items", []):
                 t = item.get("type")
                 if t == "bar":
-                    clip = tl.clip_bar(item["start"], item["end"])
+                    clip = tl.clip_bar(item["start"], item["end"], item.get("label", ""))
                     if clip is None:
                         print(f"! полоса '{item.get('label')}' в строке '{row.get('label')}' "
                               f"целиком вне диапазона roadmap — пропущена")
@@ -187,6 +187,9 @@ def main(json_path, out_path):
                         print(f"! веха '{item.get('label', item['date'])}' в строке "
                               f"'{row.get('label')}' вне диапазона roadmap — пропущена")
                         continue
+                    if i0 in occupied:
+                        print(f"! перекрытие в строке '{row.get('label')}': веха "
+                              f"'{item.get('label', item['date'])}' рисуется поверх соседнего элемента")
                     occupied.add(i0)
                     status = item.get("status", "done")
                     d = Inches(0.16)
@@ -201,6 +204,9 @@ def main(json_path, out_path):
                         ltext, lsize = fit_bar_text(item["label"], lw, ROW_H, sizes=(8, 7))
                         add_box(slide, cx + d, ry, lw, ROW_H, text=ltext,
                                 size=lsize, align=PP_ALIGN.LEFT)
+                        # подпись занимает ~2 недели справа от ромба — резервируем,
+                        # чтобы следующая полоса честно предупредила о перекрытии
+                        occupied.update(range(i0, min(i0 + 2, tl.n)))
                 elif t == "note":
                     i0 = tl.week_index(item["date"], clamp=False)
                     if i0 is None:
@@ -214,10 +220,11 @@ def main(json_path, out_path):
 
         # Названия групп слева
         for g, k0, n in group_spans:
-            gname = g["name"] + (f'\n({g["owner"]})' if g.get("owner") else "")
+            gname = group_label(g)
+            gsize = 9 if len(gname) <= 90 else 8
             add_box(slide, MARGIN, grid_top + ROW_H * k0, GROUP_W, ROW_H * n,
                     fill_hex=STYLE["group_fill"], line_hex=STYLE["grid_line"],
-                    text=gname, size=9, bold=True, align=PP_ALIGN.LEFT)
+                    text=gname, size=gsize, bold=True, align=PP_ALIGN.LEFT)
 
         # Линия "сегодня"
         if today_i is not None:

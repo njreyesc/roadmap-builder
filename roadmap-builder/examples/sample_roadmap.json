@@ -1,6 +1,6 @@
 {
   "title": "Roadmap: Агентская платформа",
-  "subtitle": "MPV — синий",
+  "subtitle": "MVP — синий",
   "start": "2025-08-04",
   "end": "2025-11-02",
   "today": "2025-08-14",
@@ -8,6 +8,7 @@
     {
       "name": "КАФО агента (Интеграция, взаимодействие)",
       "owner": "Д. Шатыр",
+      "services": ["CTL", "ClickHouse", "СберЧат", "ЛДБР", "IDP"],
       "rows": [
         {"label": "Подготовлен драфт", "items": [
           {"type": "milestone", "date": "2025-08-05", "status": "done"}
@@ -20,7 +21,7 @@
         ]},
         {"label": "ClickHouse: безы ОК, ДКА", "items": [
           {"type": "milestone", "date": "2025-08-12", "status": "done"},
-          {"type": "bar", "start": "2025-08-18", "end": "2025-08-24", "label": "Согласование", "style": "work"},
+          {"type": "bar", "start": "2025-08-18", "end": "2025-08-24", "label": "Согласов.", "style": "work"},
           {"type": "milestone", "date": "2025-08-26", "status": "planned"}
         ]},
         {"label": "ЛДБР: ДКА", "items": [
@@ -79,6 +80,7 @@
     {
       "name": "Интеграция",
       "owner": "С. Славский ?",
+      "services": ["CTL", "СберЧат", "ClickHouse"],
       "rows": [
         {"label": "CTL", "items": [
           {"type": "bar", "start": "2025-08-25", "end": "2025-09-21", "label": "4 спринта 2 ше", "style": "work"}
@@ -94,6 +96,7 @@
     {
       "name": "Интеграция с IDP (RAG)",
       "owner": "С. Славский ?",
+      "services": ["IDP"],
       "rows": [
         {"label": "Встреча-Гемба — 20.08.2025", "items": [
           {"type": "milestone", "date": "2025-08-20", "status": "planned"}

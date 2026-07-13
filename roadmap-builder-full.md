@@ -8,14 +8,14 @@
 ```markdown
 ---
 name: roadmap-builder
-description: Строит roadmap (дорожную карту) в двух форматах — Excel (.xlsx) и PowerPoint (.pptx) — из исходного Excel-плана работ по спринтам/неделям/людям. Использовать всегда, когда пользователь просит roadmap, дорожную карту, план-график, Gantt, таймлайн по спринтам, «переложи план в презентацию», «сделай roadmap из excel», или присылает файл плана работ со спринтами и просит визуализацию. Также использовать при обновлении существующего roadmap новыми данными.
+description: Строит roadmap (дорожную карту) в двух форматах — Excel (.xlsx) и PowerPoint (.pptx) — из исходного Excel-плана работ по спринтам/неделям/людям. Дорожки roadmap группируются по фичам, а не по людям. Использовать всегда, когда пользователь просит roadmap, дорожную карту, план-график, Gantt, таймлайн по спринтам, «переложи план в презентацию», «сделай roadmap из excel», или присылает файл плана работ со спринтами и просит визуализацию. Также использовать при обновлении существующего roadmap новыми данными.
 ---
 
 # Roadmap Builder
 
 Превращает исходный Excel-план работ (спринты в колонках, люди/команды в строках, задачи в ячейках) в roadmap двух видов:
 
-1. **roadmap.xlsx** — таймлайн-сетка: месяцы → недели в шапке, дорожки (свимлейны) по командам/направлениям, вехи-ромбы, полосы работ с подписями («6 спринтов 2 ше»), выноски-комментарии, отметка «сегодня».
+1. **roadmap.xlsx** — таймлайн-сетка: месяцы → недели в шапке, дорожки (свимлейны) по фичам, вехи-ромбы, полосы работ с подписями («6 спринтов 2 ше»), выноски-комментарии, отметка «сегодня».
 2. **roadmap.pptx** — те же данные слайдами в стиле управленческой презентации: сетка недель, оранжевые/жёлтые полосы, зелёные (done) и белые с красным контуром (план) ромбы, голубые выноски, зелёная вертикальная линия «сегодня».
 
 ## Архитектура: parse → JSON → render
@@ -40,14 +40,18 @@ description: Строит roadmap (дорожную карту) в двух фо
 - **Одна и та же задача в соседних ячейках подряд** = одна полоса (bar) от первой до последней недели. Сравнивай тексты нечётко: одинаковый префикс/тикет — та же задача.
 - **Цвет заливки несёт смысл** (уточни у пользователя при первом использовании и запомни): в типичном исходнике жёлтый = отпуск или «Выход на КО», зелёный = завершено/особый статус, красный текст = риск/блокер.
 - **Отпуск** — рендери как полосу style `vacation`.
-- **Строки-группы** (человек/команда) становятся `groups`, конкретные подзадачи — `rows` внутри группы. Если у человека все задачи в одной строке исходника, делай одну группу с одной-двумя строками — не плоди пустые дорожки.
+- **Дорожки roadmap — это фичи, а не люди.** Каждая `group` — фича/эпик/направление («Интеграция с IDP», «Требования к агентам»), конкретные подзадачи — `rows` внутри группы. Фичу определяй по тегам (`[SDD]`, `[Сделки_ДЗО]`), тикетам и общему префиксу текста задач. Если в исходнике строки — люди, перегруппируй: собери задачи одной фичи от разных людей в одну дорожку, а человека укажи в `owner` группы (или упомяни в `label` строки, если внутри фичи владельцы разные). Одна фича у нескольких людей = одна группа. Не плоди пустые дорожки: у фичи с одной задачей — одна строка.
+- **Дорабатываемые сервисы фичи** — в `services` группы. По каждой фиче перечисли предполагаемые сервисы/системы, которые придётся дорабатывать: бери их из тегов, текста задач и названий интеграций (CTL, ClickHouse, IDP, СберЧат и т.п.). Список показывается в левой колонке под владельцем («Сервисы: …»). Если из исходника сервисы не видны — включи вопрос про них в единый уточняющий вопрос пользователю, а не выдумывай; при отсутствии ответа поле опусти.
+- **Персональные события** (отпуск, «Выход на КО») не размазывай по фичам: вынеси их в отдельную группу «Команда» в конце roadmap. Исключение — отпуск, который прямо объясняет разрыв в полосе конкретной фичи: его можно оставить строкой внутри этой фичи.
 - Однонедельные события с глаголом завершённости («Подготовлен драфт», «Выход на КО») — это **вехи** (milestone), а не полосы.
+- **Несколько вех одной задачи — в одну строку.** Если у задачи несколько контрольных точек («Выход на КО» в трёх датах), клади их как несколько milestone-элементов в `items` одной строки, а не тремя одинаковыми строками — иначе roadmap раздувается пустыми дорожками. Пара «полоса + завершающая веха» одной задачи — тоже одна строка.
+- **Подписи полос — короткие.** Внутри полосы помещается примерно 2 символа на неделю ширины; для короткой полосы оставь тикет/ключевые слова (`ARGUSRA-5698`, «Лимиты ОФР»), полный текст задачи уже есть в подписи строки (`label`), а детали можно унести в `note`. Рендерер сам ужмёт и усечёт слишком длинный текст с «…», но лучше до этого не доводить.
 
 Если структура исходника непонятна (нестандартная шапка, несколько листов) — задай пользователю один компактный вопрос со своей лучшей гипотезой, не бомбардируй вопросами.
 
 ## Что уточнить у пользователя (один раз, одним вопросом)
 
-Если не сказано явно: период roadmap (от какой до какой даты), уровень детализации (все задачи или только ключевые вехи/полосы), дата «сегодня»-линии. Разумные дефолты: весь период исходника, все задачи, сегодняшняя дата.
+Если не сказано явно: период roadmap (от какой до какой даты), уровень детализации (все задачи или только ключевые вехи/полосы), дата «сегодня»-линии, дорабатываемые сервисы по фичам (если не восстанавливаются из исходника). Разумные дефолты: весь период исходника, все задачи, сегодняшняя дата, сервисы — только те, что явно видны в исходнике.
 
 ## Стили (зашиты в рендереры)
 
@@ -63,9 +67,10 @@ description: Строит roadmap (дорожную карту) в двух фо
 
 ## Ограничения и типичные ошибки
 
-- В pptx на один слайд помещается ~14 строк дорожек — рендерер сам паджинирует, шапка повторяется. Не пытайся ужать всё в один слайд, уменьшая шрифт ниже 8pt.
+- В pptx на один слайд помещается 15 строк дорожек — рендерер сам паджинирует, шапка повторяется. Не пытайся ужать всё в один слайд, уменьшая шрифт ниже 8pt.
 - Русские подписи длинные: в xlsx подпись полосы кладётся в объединённый диапазон полосы; если текст длиннее полосы — сократи подпись в JSON (например, до тикета), полный текст унеси в `note`.
 - Даты в JSON только ISO (`YYYY-MM-DD`). Все преобразования дат делай на этапе парсинга.
+- **Диапазон roadmap должен покрывать задачи.** Полоса, выходящая за `start`/`end`, обрезается по границе и помечается стрелкой «→»/«←»; вехи и выноски вне диапазона пропускаются с предупреждением в консоли. Если видишь такие предупреждения — либо расширь диапазон, либо подтверди у пользователя, что усечение намеренное.
 - После генерации обоих файлов открой их программно (openpyxl / python-pptx) и проверь: количество дорожек совпадает с JSON, нет полос с нулевой шириной, вехи попали в диапазон дат. Потом отдай файлы пользователю.
 
 ## Файлы скилла
@@ -74,7 +79,6 @@ description: Строит roadmap (дорожную карту) в двух фо
 - `scripts/build_xlsx.py` — рендерер Excel.
 - `scripts/build_pptx.py` — рендерер PowerPoint.
 - `examples/sample_roadmap.json` — рабочий пример входных данных.
-
 ```
 
 ---
@@ -89,7 +93,7 @@ description: Строит roadmap (дорожную карту) в двух фо
 ```json
 {
   "title": "Roadmap: Агентская платформа",
-  "subtitle": "MPV — синий",
+  "subtitle": "MVP — синий",
   "start": "2025-08-04",
   "end": "2025-11-02",
   "today": "2025-08-14",
@@ -97,6 +101,7 @@ description: Строит roadmap (дорожную карту) в двух фо
     {
       "name": "КАФО агента (Интеграция, взаимодействие)",
       "owner": "Д. Шатыр",
+      "services": ["CTL", "ClickHouse", "СберЧат"],
       "rows": [
         {
           "label": "Подготовлен драфт",
@@ -108,7 +113,7 @@ description: Строит roadmap (дорожную карту) в двух фо
           "label": "ClickHouse: безы ОК, ДКА",
           "items": [
             {"type": "milestone", "date": "2025-08-12", "status": "done"},
-            {"type": "bar", "start": "2025-08-18", "end": "2025-08-24", "label": "Согласование", "style": "work"},
+            {"type": "bar", "start": "2025-08-18", "end": "2025-08-24", "label": "Согласов.", "style": "work"},
             {"type": "milestone", "date": "2025-08-25", "status": "planned"},
             {"type": "note", "date": "2025-09-08", "text": "Зависит от итогов Гембы"}
           ]
@@ -139,13 +144,14 @@ description: Строит roadmap (дорожную карту) в двух фо
 | `subtitle` | нет | Подзаголовок / легенда-пояснение |
 | `start`, `end` | да | Границы таймлайна, ISO-даты. Округляются к понедельнику/воскресенью |
 | `today` | нет | Дата зелёной линии «сегодня». Не рисуется, если вне диапазона |
-| `groups` | да | Дорожки верхнего уровня |
+| `groups` | да | Дорожки верхнего уровня — по одной на фичу/направление |
 
 ### group
 | Поле | Описание |
 |---|---|
-| `name` | Название команды/направления, показывается в левой колонке жирным |
-| `owner` | Ответственный, показывается под названием в скобках |
+| `name` | Название фичи/направления, показывается в левой колонке жирным |
+| `owner` | Ответственный за фичу (человек/команда), показывается под названием в скобках |
+| `services` | Массив строк — предполагаемые дорабатываемые сервисы/системы. Показывается под владельцем строкой «Сервисы: …» |
 | `rows` | Строки внутри дорожки |
 
 ### row
@@ -177,8 +183,9 @@ description: Строит roadmap (дорожную карту) в двух фо
 ## Правила
 - Все даты — `YYYY-MM-DD`. Единица сетки — неделя (пн–вс).
 - Элементы одной строки не должны перекрываться по неделям (кроме note — она рисуется поверх). Если в исходнике перекрытие — разнеси по отдельным row.
+- Веха, попавшая на полосу, не теряется, но деградирует: в pptx рисуется поверх полосы, в xlsx дописывается к её подписи; в обоих случаях в консоль идёт предупреждение.
+- Ограничение xlsx: линия «сегодня», попадающая внутрь полосы (не на её правый край), на этой строке не отрисовывается — у объединённых ячеек Excel не показывает внутренние границы.
 - Пустая строка (без items) допустима — используется как визуальный разделитель.
-
 ```
 
 ---
@@ -246,13 +253,31 @@ class Timeline:
 
     def week_index(self, d, clamp=True):
         """Индекс недели для даты (0-based). clamp — прижать к границам."""
-        d = parse_date(d) if isinstance(d, str) else d
-        i = (monday(d) - self.start).days // 7
+        i = self.week_index_raw(d)
         if clamp:
             i = max(0, min(self.n - 1, i))
         elif i < 0 or i >= self.n:
             return None
         return i
+
+    def week_index_raw(self, d):
+        """Индекс недели без прижатия к границам (может быть <0 или >= n)."""
+        d = parse_date(d) if isinstance(d, str) else d
+        return (monday(d) - self.start).days // 7
+
+    def clip_bar(self, start, end, label=""):
+        """Видимый диапазон полосы (i0, i1) и маркеры выхода за границы.
+
+        Возвращает (i0, i1, cut_left, cut_right) либо None, если полоса
+        целиком вне диапазона roadmap.
+        """
+        r0, r1 = self.week_index_raw(start), self.week_index_raw(end)
+        if r1 < r0:
+            print(f"! у полосы '{label}' start позже end ({start} > {end}) — даты поменяны местами")
+            r0, r1 = r1, r0
+        if r1 < 0 or r0 >= self.n:
+            return None
+        return max(0, r0), min(self.n - 1, r1), r0 < 0, r1 > self.n - 1
 
     def week_label(self, i):
         w = self.weeks[i]
@@ -281,6 +306,16 @@ def load_roadmap(path):
     return data, tl
 
 
+def group_label(g):
+    """Подпись группы в левой колонке: фича, владелец, дорабатываемые сервисы."""
+    label = g["name"]
+    if g.get("owner"):
+        label += f'\n({g["owner"]})'
+    if g.get("services"):
+        label += "\nСервисы: " + ", ".join(g["services"])
+    return label
+
+
 def flatten_rows(data):
     """[(group, row, is_first_row_of_group)] в порядке отрисовки."""
     out = []
@@ -289,7 +324,6 @@ def flatten_rows(data):
         for j, r in enumerate(rows):
             out.append((g, r, j == 0))
     return out
-
 ```
 
 ---
@@ -305,11 +339,12 @@ def flatten_rows(data):
 import sys
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import MergedCell
 from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from roadmap_common import STYLE, flatten_rows, load_roadmap
+from roadmap_common import STYLE, flatten_rows, group_label, load_roadmap
 
 COL_GROUP = 1   # A — команда/направление
 COL_LABEL = 2   # B — подпись строки
@@ -325,6 +360,27 @@ def fill(hexcode):
 def thin_border(color=STYLE["grid_line"]):
     side = Side(style="thin", color=color)
     return Border(left=side, right=side, top=side, bottom=side)
+
+
+def merge_range_at(ws, r, c):
+    """Merge-диапазон, накрывающий (r, c), либо None."""
+    for mr in ws.merged_cells.ranges:
+        if mr.min_row <= r <= mr.max_row and mr.min_col <= c <= mr.max_col:
+            return mr
+    return None
+
+
+def anchor_cell(ws, r, c):
+    """Записываемая ячейка для (r, c): якорь merge-диапазона либо сама ячейка.
+
+    В MergedCell нельзя писать value/comment — только в верхнюю-левую ячейку.
+    """
+    cell = ws.cell(row=r, column=c)
+    if isinstance(cell, MergedCell):
+        mr = merge_range_at(ws, r, c)
+        if mr:
+            return ws.cell(row=mr.min_row, column=mr.min_col)
+    return cell
 
 
 def main(json_path, out_path):
@@ -372,14 +428,13 @@ def main(json_path, out_path):
     rows = flatten_rows(data)
     # Сетка + данные
     bar_styles = {
-        "work": (STYLE["bar_work_fill"], STYLE["text"]),
-        "estimate": (STYLE["bar_estimate_fill"], STYLE["text"]),
-        "vacation": (STYLE["bar_vacation_fill"], STYLE["text"]),
+        "work": (STYLE["bar_work_fill"], STYLE["bar_work_line"]),
+        "estimate": (STYLE["bar_estimate_fill"], STYLE["bar_estimate_line"]),
+        "vacation": (STYLE["bar_vacation_fill"], STYLE["bar_vacation_line"]),
     }
     r = FIRST_DATA_ROW
     group_start = {}
     for g, row, is_first in rows:
-        gname = g["name"] + (f'\n({g["owner"]})' if g.get("owner") else "")
         if is_first:
             group_start[id(g)] = r
         # фон сетки
@@ -396,47 +451,76 @@ def main(json_path, out_path):
         for item in row.get("items", []):
             t = item.get("type")
             if t == "bar":
-                i0 = tl.week_index(item["start"])
-                i1 = tl.week_index(item["end"])
-                if i1 < i0:
-                    i0, i1 = i1, i0
+                clip = tl.clip_bar(item["start"], item["end"], item.get("label", ""))
+                if clip is None:
+                    print(f"! полоса '{item.get('label')}' в строке '{row.get('label')}' "
+                          f"целиком вне диапазона roadmap — пропущена")
+                    continue
+                i0, i1, cut_l, cut_r = clip
+                label = item.get("label", "")
+                if cut_r:
+                    label = (label + " →") if label else "→"
+                if cut_l:
+                    label = ("← " + label) if label else "←"
                 c0, c1 = FIRST_WEEK_COL + i0, FIRST_WEEK_COL + i1
                 if any(c in occupied for c in range(c0, c1 + 1)):
-                    print(f"! перекрытие в строке '{row.get('label')}', полоса '{item.get('label')}' пропущена частично")
+                    print(f"! перекрытие в строке '{row.get('label')}', полоса '{item.get('label')}' обрезана до свободных недель")
+                    while c0 <= c1 and c0 in occupied:  # сдвигаем начало до свободной колонки
+                        c0 += 1
+                    end = c0
+                    while end + 1 <= c1 and end + 1 not in occupied:
+                        end += 1
+                    c1 = end
+                    if c0 > c1:
+                        print(f"!   свободных недель не осталось — полоса пропущена")
+                        continue
                 if c1 > c0:
                     ws.merge_cells(start_row=r, start_column=c0, end_row=r, end_column=c1)
-                bar_fill, font_color = bar_styles.get(item.get("style", "work"), bar_styles["work"])
-                cell = ws.cell(row=r, column=c0, value=item.get("label", ""))
+                bar_fill, bar_line = bar_styles.get(item.get("style", "work"), bar_styles["work"])
+                cell = ws.cell(row=r, column=c0, value=label)
                 cell.alignment = center
-                cell.font = Font(size=9, color=font_color)
+                cell.font = Font(size=9, color=STYLE["text"])
                 for c in range(c0, c1 + 1):
                     ws.cell(row=r, column=c).fill = fill(bar_fill)
-                    ws.cell(row=r, column=c).border = thin_border(bar_styles.get(item.get("style", "work"))[0])
+                    ws.cell(row=r, column=c).border = thin_border(bar_line)
                     occupied.add(c)
             elif t == "milestone":
-                i0 = tl.week_index(item["date"])
+                i0 = tl.week_index(item["date"], clamp=False)
+                if i0 is None:
+                    print(f"! веха '{item.get('label', item['date'])}' в строке "
+                          f"'{row.get('label')}' вне диапазона roadmap — пропущена")
+                    continue
                 c0 = FIRST_WEEK_COL + i0
                 status = item.get("status", "done")
                 color = STYLE["milestone_done_fill"] if status == "done" else STYLE["milestone_planned_line"]
                 text = "◆" if status == "done" else "◇"
                 if item.get("label"):
                     text += " " + item["label"]
-                cell = ws.cell(row=r, column=c0, value=text)
-                cell.font = Font(size=12, color=color, bold=True)
-                cell.alignment = center
+                if c0 in occupied or isinstance(ws.cell(row=r, column=c0), MergedCell):
+                    # веха попала на полосу — дописываем её к подписи полосы
+                    print(f"! веха '{item.get('label', item['date'])}' в строке "
+                          f"'{row.get('label')}' перекрывает полосу — добавлена к её подписи")
+                    a = anchor_cell(ws, r, c0)
+                    a.value = f"{a.value} {text}" if a.value else text
+                else:
+                    cell = ws.cell(row=r, column=c0, value=text)
+                    cell.font = Font(size=12, color=color, bold=True)
+                    cell.alignment = center
                 occupied.add(c0)
             elif t == "note":
-                i0 = tl.week_index(item["date"])
+                i0 = tl.week_index(item["date"], clamp=False)
+                if i0 is None:
+                    print(f"! выноска '{item['text'][:30]}…' вне диапазона roadmap — пропущена")
+                    continue
                 c0 = FIRST_WEEK_COL + i0
                 cell = ws.cell(row=r, column=c0)
                 # выноска — комментарий + голубая метка, чтобы не воевать за место с полосами
-                if cell.value is None and c0 not in occupied:
-                    cell.value = "🗨"
+                if not isinstance(cell, MergedCell) and cell.value is None and c0 not in occupied:
+                    cell.value = "💬"
                     cell.alignment = center
-                target = ws.cell(row=r, column=c0)
-                target.comment = Comment(item["text"], "roadmap", height=80, width=260)
-                if c0 not in occupied:
-                    target.fill = fill(STYLE["note_fill"])
+                    cell.fill = fill(STYLE["note_fill"])
+                # комментарий можно повесить только на якорную ячейку merge-диапазона
+                anchor_cell(ws, r, c0).comment = Comment(item["text"], "roadmap", height=80, width=260)
         r += 1
 
     # Объединение колонки групп
@@ -445,19 +529,27 @@ def main(json_path, out_path):
         n = max(1, len(g.get("rows") or [1]))
         if n > 1:
             ws.merge_cells(start_row=start, start_column=COL_GROUP, end_row=start + n - 1, end_column=COL_GROUP)
-        gname = g["name"] + (f'\n({g["owner"]})' if g.get("owner") else "")
-        cell = ws.cell(row=start, column=COL_GROUP, value=gname)
+        cell = ws.cell(row=start, column=COL_GROUP, value=group_label(g))
         cell.font = Font(bold=True, size=10)
         cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
         for rr in range(start, start + n):
             ws.cell(row=rr, column=COL_GROUP).fill = fill(STYLE["group_fill"])
             ws.cell(row=rr, column=COL_GROUP).border = thin_border()
 
-    # Линия "сегодня": правая граница колонки текущей недели
+    # Линия "сегодня": правая граница колонки текущей недели.
+    # openpyxl при сохранении переписывает границы merge-диапазона от якорной
+    # ячейки, поэтому для полос границу ставим на якорь (и только если today —
+    # правый край полосы: внутри merge-ячейки Excel линию не отрисует).
     if today_col:
         side = Side(style="medium", color=STYLE["today_line"])
         for rr in range(3, r):
-            cell = ws.cell(row=rr, column=today_col)
+            mr = merge_range_at(ws, rr, today_col)
+            if mr is not None:
+                if mr.max_col != today_col:
+                    continue
+                cell = ws.cell(row=mr.min_row, column=mr.min_col)
+            else:
+                cell = ws.cell(row=rr, column=today_col)
             b = cell.border
             cell.border = Border(left=b.left, right=side, top=b.top, bottom=b.bottom)
 
@@ -486,7 +578,6 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         sys.exit("Использование: python build_xlsx.py roadmap.json roadmap.xlsx")
     main(sys.argv[1], sys.argv[2])
-
 ```
 
 ---
@@ -507,7 +598,7 @@ from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
-from roadmap_common import STYLE, flatten_rows, load_roadmap
+from roadmap_common import STYLE, flatten_rows, group_label, load_roadmap
 
 SLIDE_W = Inches(13.333)
 SLIDE_H = Inches(7.5)
@@ -523,6 +614,29 @@ MAX_ROWS_PER_SLIDE = 15
 
 def rgb(hexcode):
     return RGBColor.from_string(hexcode)
+
+
+EMU_PER_IN = 914400
+
+
+def fit_bar_text(text, w, h, sizes=(8.5, 7.5, 6.5)):
+    """Подбирает размер шрифта, чтобы текст влез в плашку w×h (EMU).
+
+    Если не влезает даже минимальным — усекает с многоточием.
+    Оценка ширины символа ~0.55·size pt (кириллица), высоты строки ~1.25·size pt.
+    """
+    if not text:
+        return text, sizes[0]
+    w_in = max(0.1, w / EMU_PER_IN - 0.06)  # минус внутренние поля
+    h_in = max(0.08, h / EMU_PER_IN - 0.02)
+    cpl = lines = 1
+    for size in sizes:
+        cpl = max(1, int(w_in / (size * 0.55 / 72)))
+        lines = max(1, int(h_in / (size * 1.25 / 72)))
+        if len(text) <= cpl * lines:
+            return text, size
+    cap = max(1, cpl * lines - 1)
+    return text[:cap] + "…", sizes[-1]
 
 
 def add_box(slide, x, y, w, h, fill_hex=None, line_hex=None, text="", size=9,
@@ -626,21 +740,44 @@ def main(json_path, out_path):
             add_box(slide, MARGIN + GROUP_W, ry, LABEL_W, ROW_H, text=row.get("label", ""),
                     size=8, align=PP_ALIGN.LEFT)
 
+            occupied = set()
             for item in row.get("items", []):
                 t = item.get("type")
                 if t == "bar":
-                    i0 = tl.week_index(item["start"])
-                    i1 = tl.week_index(item["end"])
-                    if i1 < i0:
-                        i0, i1 = i1, i0
+                    clip = tl.clip_bar(item["start"], item["end"], item.get("label", ""))
+                    if clip is None:
+                        print(f"! полоса '{item.get('label')}' в строке '{row.get('label')}' "
+                              f"целиком вне диапазона roadmap — пропущена")
+                        continue
+                    i0, i1, cut_l, cut_r = clip
+                    if any(i in occupied for i in range(i0, i1 + 1)):
+                        print(f"! перекрытие в строке '{row.get('label')}': "
+                              f"полоса '{item.get('label')}' налезает на соседний элемент")
+                    occupied.update(range(i0, i1 + 1))
+                    label = item.get("label", "")
+                    if cut_r:
+                        label = (label + " →") if label else "→"
+                    if cut_l:
+                        label = ("← " + label) if label else "←"
+                    bw = week_w * (i1 - i0 + 1) - Emu(40000)
+                    bh = ROW_H - Inches(0.1)
+                    label, size = fit_bar_text(label, bw, bh)
                     style = item.get("style", "work")
                     add_box(slide, week_x(i0) + Emu(20000), ry + Inches(0.05),
-                            week_w * (i1 - i0 + 1) - Emu(40000), ROW_H - Inches(0.1),
+                            bw, bh,
                             fill_hex=STYLE[f"bar_{style}_fill"], line_hex=STYLE[f"bar_{style}_line"],
-                            text=item.get("label", ""), size=8.5,
+                            text=label, size=size,
                             shape=MSO_SHAPE.ROUNDED_RECTANGLE)
                 elif t == "milestone":
-                    i0 = tl.week_index(item["date"])
+                    i0 = tl.week_index(item["date"], clamp=False)
+                    if i0 is None:
+                        print(f"! веха '{item.get('label', item['date'])}' в строке "
+                              f"'{row.get('label')}' вне диапазона roadmap — пропущена")
+                        continue
+                    if i0 in occupied:
+                        print(f"! перекрытие в строке '{row.get('label')}': веха "
+                              f"'{item.get('label', item['date'])}' рисуется поверх соседнего элемента")
+                    occupied.add(i0)
                     status = item.get("status", "done")
                     d = Inches(0.16)
                     cx = week_x(i0) + int(week_w / 2) - int(d / 2)
@@ -650,10 +787,18 @@ def main(json_path, out_path):
                             fill_hex=fill_hex, line_hex=line_hex, shape=MSO_SHAPE.DIAMOND,
                             line_w=1.25)
                     if item.get("label"):
-                        add_box(slide, cx + d, ry, week_w * 2, ROW_H, text=item["label"],
-                                size=8, align=PP_ALIGN.LEFT)
+                        lw = min(week_w * 2, week_x(tl.n) - (cx + d))
+                        ltext, lsize = fit_bar_text(item["label"], lw, ROW_H, sizes=(8, 7))
+                        add_box(slide, cx + d, ry, lw, ROW_H, text=ltext,
+                                size=lsize, align=PP_ALIGN.LEFT)
+                        # подпись занимает ~2 недели справа от ромба — резервируем,
+                        # чтобы следующая полоса честно предупредила о перекрытии
+                        occupied.update(range(i0, min(i0 + 2, tl.n)))
                 elif t == "note":
-                    i0 = tl.week_index(item["date"])
+                    i0 = tl.week_index(item["date"], clamp=False)
+                    if i0 is None:
+                        print(f"! выноска '{item['text'][:30]}…' вне диапазона roadmap — пропущена")
+                        continue
                     w = min(week_w * 4, week_x(tl.n) - week_x(i0))
                     add_box(slide, week_x(i0), ry + Inches(0.03), w, ROW_H - Inches(0.06),
                             fill_hex=STYLE["note_fill"], line_hex=STYLE["note_line"],
@@ -662,10 +807,11 @@ def main(json_path, out_path):
 
         # Названия групп слева
         for g, k0, n in group_spans:
-            gname = g["name"] + (f'\n({g["owner"]})' if g.get("owner") else "")
+            gname = group_label(g)
+            gsize = 9 if len(gname) <= 90 else 8
             add_box(slide, MARGIN, grid_top + ROW_H * k0, GROUP_W, ROW_H * n,
                     fill_hex=STYLE["group_fill"], line_hex=STYLE["grid_line"],
-                    text=gname, size=9, bold=True, align=PP_ALIGN.LEFT)
+                    text=gname, size=gsize, bold=True, align=PP_ALIGN.LEFT)
 
         # Линия "сегодня"
         if today_i is not None:
@@ -675,19 +821,24 @@ def main(json_path, out_path):
             ln.line.color.rgb = rgb(STYLE["today_line"])
             ln.line.width = Pt(1.75)
 
-        # Легенда внизу
+        # Легенда внизу: цветной значок (фигура) + подпись тёмным текстом
         ly = grid_top + grid_h + Inches(0.12)
         if ly + Inches(0.25) < SLIDE_H:
-            items = [("◆", STYLE["milestone_done_fill"], "выполнено"),
-                     ("◇", STYLE["milestone_planned_line"], "план"),
-                     ("▬", STYLE["bar_work_fill"], "работы"),
-                     ("▬", STYLE["bar_estimate_fill"], "оценка т/з"),
-                     ("▬", STYLE["bar_vacation_fill"], "отпуск")]
+            items = [
+                (MSO_SHAPE.DIAMOND, STYLE["milestone_done_fill"], STYLE["milestone_done_line"], "выполнено"),
+                (MSO_SHAPE.DIAMOND, STYLE["milestone_planned_fill"], STYLE["milestone_planned_line"], "план"),
+                (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_work_fill"], STYLE["bar_work_line"], "работы"),
+                (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_estimate_fill"], STYLE["bar_estimate_line"], "оценка т/з"),
+                (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_vacation_fill"], STYLE["bar_vacation_line"], "отпуск"),
+            ]
             x = MARGIN
-            for sym, color, label in items:
-                add_box(slide, x, ly, Inches(1.5), Inches(0.22),
-                        text=f"{sym} {label}", size=8, color=color, align=PP_ALIGN.LEFT)
-                x += Inches(1.55)
+            for shape, fill_hex, line_hex, label in items:
+                sym_w = Inches(0.13) if shape == MSO_SHAPE.DIAMOND else Inches(0.3)
+                add_box(slide, x, ly + Inches(0.045), sym_w, Inches(0.13),
+                        fill_hex=fill_hex, line_hex=line_hex, shape=shape, line_w=1.0)
+                add_box(slide, x + sym_w + Inches(0.04), ly, Inches(1.1), Inches(0.22),
+                        text=label, size=8, color=STYLE["text"], align=PP_ALIGN.LEFT)
+                x += sym_w + Inches(1.25)
 
     prs.save(out_path)
     print(f"OK: {out_path} — {len(rows)} строк, {len(pages)} слайдов, {tl.n} недель")
@@ -697,7 +848,6 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         sys.exit("Использование: python build_pptx.py roadmap.json roadmap.pptx")
     main(sys.argv[1], sys.argv[2])
-
 ```
 
 ---
@@ -707,7 +857,7 @@ if __name__ == "__main__":
 ```json
 {
   "title": "Roadmap: Агентская платформа",
-  "subtitle": "MPV — синий",
+  "subtitle": "MVP — синий",
   "start": "2025-08-04",
   "end": "2025-11-02",
   "today": "2025-08-14",
@@ -715,6 +865,7 @@ if __name__ == "__main__":
     {
       "name": "КАФО агента (Интеграция, взаимодействие)",
       "owner": "Д. Шатыр",
+      "services": ["CTL", "ClickHouse", "СберЧат", "ЛДБР", "IDP"],
       "rows": [
         {"label": "Подготовлен драфт", "items": [
           {"type": "milestone", "date": "2025-08-05", "status": "done"}
@@ -727,7 +878,7 @@ if __name__ == "__main__":
         ]},
         {"label": "ClickHouse: безы ОК, ДКА", "items": [
           {"type": "milestone", "date": "2025-08-12", "status": "done"},
-          {"type": "bar", "start": "2025-08-18", "end": "2025-08-24", "label": "Согласование", "style": "work"},
+          {"type": "bar", "start": "2025-08-18", "end": "2025-08-24", "label": "Согласов.", "style": "work"},
           {"type": "milestone", "date": "2025-08-26", "status": "planned"}
         ]},
         {"label": "ЛДБР: ДКА", "items": [
@@ -786,6 +937,7 @@ if __name__ == "__main__":
     {
       "name": "Интеграция",
       "owner": "С. Славский ?",
+      "services": ["CTL", "СберЧат", "ClickHouse"],
       "rows": [
         {"label": "CTL", "items": [
           {"type": "bar", "start": "2025-08-25", "end": "2025-09-21", "label": "4 спринта 2 ше", "style": "work"}
@@ -801,6 +953,7 @@ if __name__ == "__main__":
     {
       "name": "Интеграция с IDP (RAG)",
       "owner": "С. Славский ?",
+      "services": ["IDP"],
       "rows": [
         {"label": "Встреча-Гемба — 20.08.2025", "items": [
           {"type": "milestone", "date": "2025-08-20", "status": "planned"}
@@ -818,5 +971,6 @@ if __name__ == "__main__":
     }
   ]
 }
-
 ```
+
+---

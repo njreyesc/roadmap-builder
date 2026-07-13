@@ -6,11 +6,12 @@
 import sys
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import MergedCell
 from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from roadmap_common import STYLE, flatten_rows, load_roadmap
+from roadmap_common import STYLE, flatten_rows, group_label, load_roadmap
 
 COL_GROUP = 1   # A — команда/направление
 COL_LABEL = 2   # B — подпись строки
@@ -26,6 +27,27 @@ def fill(hexcode):
 def thin_border(color=STYLE["grid_line"]):
     side = Side(style="thin", color=color)
     return Border(left=side, right=side, top=side, bottom=side)
+
+
+def merge_range_at(ws, r, c):
+    """Merge-диапазон, накрывающий (r, c), либо None."""
+    for mr in ws.merged_cells.ranges:
+        if mr.min_row <= r <= mr.max_row and mr.min_col <= c <= mr.max_col:
+            return mr
+    return None
+
+
+def anchor_cell(ws, r, c):
+    """Записываемая ячейка для (r, c): якорь merge-диапазона либо сама ячейка.
+
+    В MergedCell нельзя писать value/comment — только в верхнюю-левую ячейку.
+    """
+    cell = ws.cell(row=r, column=c)
+    if isinstance(cell, MergedCell):
+        mr = merge_range_at(ws, r, c)
+        if mr:
+            return ws.cell(row=mr.min_row, column=mr.min_col)
+    return cell
 
 
 def main(json_path, out_path):
@@ -73,14 +95,13 @@ def main(json_path, out_path):
     rows = flatten_rows(data)
     # Сетка + данные
     bar_styles = {
-        "work": (STYLE["bar_work_fill"], STYLE["text"]),
-        "estimate": (STYLE["bar_estimate_fill"], STYLE["text"]),
-        "vacation": (STYLE["bar_vacation_fill"], STYLE["text"]),
+        "work": (STYLE["bar_work_fill"], STYLE["bar_work_line"]),
+        "estimate": (STYLE["bar_estimate_fill"], STYLE["bar_estimate_line"]),
+        "vacation": (STYLE["bar_vacation_fill"], STYLE["bar_vacation_line"]),
     }
     r = FIRST_DATA_ROW
     group_start = {}
     for g, row, is_first in rows:
-        gname = g["name"] + (f'\n({g["owner"]})' if g.get("owner") else "")
         if is_first:
             group_start[id(g)] = r
         # фон сетки
@@ -97,7 +118,7 @@ def main(json_path, out_path):
         for item in row.get("items", []):
             t = item.get("type")
             if t == "bar":
-                clip = tl.clip_bar(item["start"], item["end"])
+                clip = tl.clip_bar(item["start"], item["end"], item.get("label", ""))
                 if clip is None:
                     print(f"! полоса '{item.get('label')}' в строке '{row.get('label')}' "
                           f"целиком вне диапазона roadmap — пропущена")
@@ -122,13 +143,13 @@ def main(json_path, out_path):
                         continue
                 if c1 > c0:
                     ws.merge_cells(start_row=r, start_column=c0, end_row=r, end_column=c1)
-                bar_fill, font_color = bar_styles.get(item.get("style", "work"), bar_styles["work"])
+                bar_fill, bar_line = bar_styles.get(item.get("style", "work"), bar_styles["work"])
                 cell = ws.cell(row=r, column=c0, value=label)
                 cell.alignment = center
-                cell.font = Font(size=9, color=font_color)
+                cell.font = Font(size=9, color=STYLE["text"])
                 for c in range(c0, c1 + 1):
                     ws.cell(row=r, column=c).fill = fill(bar_fill)
-                    ws.cell(row=r, column=c).border = thin_border(bar_styles.get(item.get("style", "work"))[0])
+                    ws.cell(row=r, column=c).border = thin_border(bar_line)
                     occupied.add(c)
             elif t == "milestone":
                 i0 = tl.week_index(item["date"], clamp=False)
@@ -142,9 +163,16 @@ def main(json_path, out_path):
                 text = "◆" if status == "done" else "◇"
                 if item.get("label"):
                     text += " " + item["label"]
-                cell = ws.cell(row=r, column=c0, value=text)
-                cell.font = Font(size=12, color=color, bold=True)
-                cell.alignment = center
+                if c0 in occupied or isinstance(ws.cell(row=r, column=c0), MergedCell):
+                    # веха попала на полосу — дописываем её к подписи полосы
+                    print(f"! веха '{item.get('label', item['date'])}' в строке "
+                          f"'{row.get('label')}' перекрывает полосу — добавлена к её подписи")
+                    a = anchor_cell(ws, r, c0)
+                    a.value = f"{a.value} {text}" if a.value else text
+                else:
+                    cell = ws.cell(row=r, column=c0, value=text)
+                    cell.font = Font(size=12, color=color, bold=True)
+                    cell.alignment = center
                 occupied.add(c0)
             elif t == "note":
                 i0 = tl.week_index(item["date"], clamp=False)
@@ -154,13 +182,12 @@ def main(json_path, out_path):
                 c0 = FIRST_WEEK_COL + i0
                 cell = ws.cell(row=r, column=c0)
                 # выноска — комментарий + голубая метка, чтобы не воевать за место с полосами
-                if cell.value is None and c0 not in occupied:
-                    cell.value = "🗨"
+                if not isinstance(cell, MergedCell) and cell.value is None and c0 not in occupied:
+                    cell.value = "💬"
                     cell.alignment = center
-                target = ws.cell(row=r, column=c0)
-                target.comment = Comment(item["text"], "roadmap", height=80, width=260)
-                if c0 not in occupied:
-                    target.fill = fill(STYLE["note_fill"])
+                    cell.fill = fill(STYLE["note_fill"])
+                # комментарий можно повесить только на якорную ячейку merge-диапазона
+                anchor_cell(ws, r, c0).comment = Comment(item["text"], "roadmap", height=80, width=260)
         r += 1
 
     # Объединение колонки групп
@@ -169,19 +196,27 @@ def main(json_path, out_path):
         n = max(1, len(g.get("rows") or [1]))
         if n > 1:
             ws.merge_cells(start_row=start, start_column=COL_GROUP, end_row=start + n - 1, end_column=COL_GROUP)
-        gname = g["name"] + (f'\n({g["owner"]})' if g.get("owner") else "")
-        cell = ws.cell(row=start, column=COL_GROUP, value=gname)
+        cell = ws.cell(row=start, column=COL_GROUP, value=group_label(g))
         cell.font = Font(bold=True, size=10)
         cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
         for rr in range(start, start + n):
             ws.cell(row=rr, column=COL_GROUP).fill = fill(STYLE["group_fill"])
             ws.cell(row=rr, column=COL_GROUP).border = thin_border()
 
-    # Линия "сегодня": правая граница колонки текущей недели
+    # Линия "сегодня": правая граница колонки текущей недели.
+    # openpyxl при сохранении переписывает границы merge-диапазона от якорной
+    # ячейки, поэтому для полос границу ставим на якорь (и только если today —
+    # правый край полосы: внутри merge-ячейки Excel линию не отрисует).
     if today_col:
         side = Side(style="medium", color=STYLE["today_line"])
         for rr in range(3, r):
-            cell = ws.cell(row=rr, column=today_col)
+            mr = merge_range_at(ws, rr, today_col)
+            if mr is not None:
+                if mr.max_col != today_col:
+                    continue
+                cell = ws.cell(row=mr.min_row, column=mr.min_col)
+            else:
+                cell = ws.cell(row=rr, column=today_col)
             b = cell.border
             cell.border = Border(left=b.left, right=side, top=b.top, bottom=b.bottom)
 

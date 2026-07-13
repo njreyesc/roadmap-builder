@@ -70,7 +70,7 @@ class Timeline:
         d = parse_date(d) if isinstance(d, str) else d
         return (monday(d) - self.start).days // 7
 
-    def clip_bar(self, start, end):
+    def clip_bar(self, start, end, label=""):
         """Видимый диапазон полосы (i0, i1) и маркеры выхода за границы.
 
         Возвращает (i0, i1, cut_left, cut_right) либо None, если полоса
@@ -78,6 +78,7 @@ class Timeline:
         """
         r0, r1 = self.week_index_raw(start), self.week_index_raw(end)
         if r1 < r0:
+            print(f"! у полосы '{label}' start позже end ({start} > {end}) — даты поменяны местами")
             r0, r1 = r1, r0
         if r1 < 0 or r0 >= self.n:
             return None
@@ -108,6 +109,16 @@ def load_roadmap(path):
             raise ValueError(f"В roadmap.json нет обязательного поля '{key}'")
     tl = Timeline(data["start"], data["end"])
     return data, tl
+
+
+def group_label(g):
+    """Подпись группы в левой колонке: фича, владелец, дорабатываемые сервисы."""
+    label = g["name"]
+    if g.get("owner"):
+        label += f'\n({g["owner"]})'
+    if g.get("services"):
+        label += "\nСервисы: " + ", ".join(g["services"])
+    return label
 
 
 def flatten_rows(data):
