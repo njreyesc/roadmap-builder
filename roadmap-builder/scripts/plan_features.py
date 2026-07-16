@@ -396,6 +396,11 @@ def main(in_path, out_path):
         roadmap["subtitle"] = src["subtitle"]
     if src.get("today"):
         roadmap["today"] = src["today"]
+    # Флажки границ рисуются рендерерами по умолчанию; пробрасываем только
+    # явные переопределения из features.json (выключение / свои подписи).
+    for key in ("flags", "start_label", "end_label"):
+        if key in src:
+            roadmap[key] = src[key]
 
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(roadmap, f, ensure_ascii=False, indent=2)

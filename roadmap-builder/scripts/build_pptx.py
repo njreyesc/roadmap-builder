@@ -11,7 +11,7 @@ from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
-from roadmap_common import STYLE, flatten_rows, group_label, load_roadmap
+from roadmap_common import STYLE, flag_markers, flatten_rows, group_label, load_roadmap
 
 SLIDE_W = Inches(13.333)
 SLIDE_H = Inches(7.5)
@@ -128,6 +128,7 @@ def main(json_path, out_path):
         y += TITLE_H + Inches(0.05)
 
         # Шапка: месяцы и недели
+        header_y = y  # верх полосы месяцев — сюда сажаем вымпелы флажков
         for label, i0, i1 in tl.month_spans():
             add_box(slide, week_x(i0), y, week_w * (i1 - i0 + 1), MONTH_H,
                     fill_hex=STYLE["header_fill"], line_hex="FFFFFF",
@@ -305,6 +306,25 @@ def main(json_path, out_path):
             ln.line.color.rgb = rgb(STYLE["today_line"])
             ln.line.width = Pt(1.75)
 
+        # Флажки границ: вертикальный «шест» через сетку + вымпел с подписью в
+        # шапке месяцев на угловой неделе (старт — слева, финиш — справа).
+        flag_w = Inches(0.62)
+        for kind, flabel in flag_markers(data):
+            x = week_x(0 if kind == "start" else tl.n)
+            fill_hex = STYLE[f"flag_{kind}_fill"]
+            line_hex = STYLE[f"flag_{kind}_line"]
+            ln = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x, header_y,
+                                            x, grid_top + grid_h)
+            ln.line.color.rgb = rgb(line_hex)
+            ln.line.width = Pt(1.5)
+            if kind == "start":
+                bx, align, btext = x, PP_ALIGN.LEFT, "⚑ " + flabel
+            else:
+                bx, align, btext = x - flag_w, PP_ALIGN.RIGHT, flabel + " ⚑"
+            add_box(slide, bx, header_y, flag_w, MONTH_H, fill_hex=fill_hex,
+                    line_hex=line_hex, text=btext, size=8, bold=True,
+                    color="FFFFFF", align=align)
+
         # Легенда внизу: цветной значок (фигура) + подпись тёмным текстом
         ly = grid_top + grid_h + Inches(0.12)
         if ly + Inches(0.25) < SLIDE_H:
@@ -316,15 +336,17 @@ def main(json_path, out_path):
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_testing_fill"], STYLE["bar_testing_line"], "тестирование"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_estimate_fill"], STYLE["bar_estimate_line"], "оценка т/з"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_vacation_fill"], STYLE["bar_vacation_line"], "отпуск"),
+                (MSO_SHAPE.PENTAGON, STYLE["flag_start_fill"], STYLE["flag_start_line"], "старт"),
+                (MSO_SHAPE.PENTAGON, STYLE["flag_end_fill"], STYLE["flag_end_line"], "финиш"),
             ]
             x = MARGIN
             for shape, fill_hex, line_hex, label in items:
-                sym_w = Inches(0.13) if shape == MSO_SHAPE.DIAMOND else Inches(0.3)
+                sym_w = Inches(0.13) if shape == MSO_SHAPE.DIAMOND else Inches(0.24)
                 add_box(slide, x, ly + Inches(0.045), sym_w, Inches(0.13),
                         fill_hex=fill_hex, line_hex=line_hex, shape=shape, line_w=1.0)
-                add_box(slide, x + sym_w + Inches(0.04), ly, Inches(1.1), Inches(0.22),
+                add_box(slide, x + sym_w + Inches(0.03), ly, Inches(0.95), Inches(0.22),
                         text=label, size=8, color=STYLE["text"], align=PP_ALIGN.LEFT)
-                x += sym_w + Inches(1.25)
+                x += sym_w + Inches(1.02)
 
     prs.save(out_path)
     print(f"OK: {out_path} — {len(rows)} строк, {len(pages)} слайдов, {tl.n} недель")

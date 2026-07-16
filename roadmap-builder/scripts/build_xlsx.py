@@ -11,7 +11,7 @@ from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from roadmap_common import STYLE, flatten_rows, group_label, load_roadmap
+from roadmap_common import STYLE, flag_markers, flatten_rows, group_label, load_roadmap
 
 COL_GROUP = 1   # A — команда/направление
 COL_LABEL = 2   # B — подпись строки
@@ -48,6 +48,31 @@ def anchor_cell(ws, r, c):
         if mr:
             return ws.cell(row=mr.min_row, column=mr.min_col)
     return cell
+
+
+def set_col_side(ws, col, which, color, first_row, last_row):
+    """Ставит вертикальную границу (which='left'|'right') колонки col по строкам.
+
+    openpyxl при сохранении переписывает границы merge-диапазона от якорной
+    ячейки, поэтому для объединённых полос границу ставим на якорь — и только
+    если col совпадает с нужным краем merge-диапазона (внутри merge Excel
+    линию не отрисует). Используется для линии «сегодня» и флажков границ.
+    """
+    side = Side(style="medium", color=color)
+    for rr in range(first_row, last_row):
+        mr = merge_range_at(ws, rr, col)
+        if mr is not None:
+            if which == "right" and mr.max_col != col:
+                continue
+            if which == "left" and mr.min_col != col:
+                continue
+            cell = ws.cell(row=mr.min_row, column=mr.min_col)
+        else:
+            cell = ws.cell(row=rr, column=col)
+        b = cell.border
+        sides = dict(left=b.left, right=b.right, top=b.top, bottom=b.bottom)
+        sides[which] = side
+        cell.border = Border(**sides)
 
 
 def main(json_path, out_path):
@@ -206,21 +231,27 @@ def main(json_path, out_path):
             ws.cell(row=rr, column=COL_GROUP).border = thin_border()
 
     # Линия "сегодня": правая граница колонки текущей недели.
-    # openpyxl при сохранении переписывает границы merge-диапазона от якорной
-    # ячейки, поэтому для полос границу ставим на якорь (и только если today —
-    # правый край полосы: внутри merge-ячейки Excel линию не отрисует).
     if today_col:
-        side = Side(style="medium", color=STYLE["today_line"])
-        for rr in range(3, r):
-            mr = merge_range_at(ws, rr, today_col)
-            if mr is not None:
-                if mr.max_col != today_col:
-                    continue
-                cell = ws.cell(row=mr.min_row, column=mr.min_col)
-            else:
-                cell = ws.cell(row=rr, column=today_col)
-            b = cell.border
-            cell.border = Border(left=b.left, right=side, top=b.top, bottom=b.bottom)
+        set_col_side(ws, today_col, "right", STYLE["today_line"], 3, r)
+
+    # Флажки границ roadmap: цветной «шест» (левая граница первой недели —
+    # старт, правая граница последней — финиш) через все строки + подпись с
+    # датой в шапке недели.
+    start_col = FIRST_WEEK_COL
+    end_col = FIRST_WEEK_COL + tl.n - 1
+    flags = flag_markers(data)
+    for kind, flabel in flags:
+        col = start_col if kind == "start" else end_col
+        which = "left" if kind == "start" else "right"
+        cell = ws.cell(row=3, column=col, value=f"⚑ {flabel}\n{tl.week_label(col - FIRST_WEEK_COL)}")
+        cell.fill = fill(STYLE[f"flag_{kind}_fill"])
+        cell.font = Font(bold=True, color="FFFFFF", size=9)
+        cell.alignment = center
+        cell.border = thin_border()
+        # «шест» ставим после подписи — цветная граница выигрывает и на шапке
+        set_col_side(ws, col, which, STYLE[f"flag_{kind}_line"], 3, r)
+    if flags:
+        ws.row_dimensions[3].height = 30  # под подпись флажка в две строки
 
     # Легенда
     lr = r + 2
@@ -233,6 +264,8 @@ def main(json_path, out_path):
         ("тестирование", None, STYLE["bar_testing_fill"]),
         ("оценка т/з", None, STYLE["bar_estimate_fill"]),
         ("отпуск", None, STYLE["bar_vacation_fill"]),
+        ("⚑ старт", "FFFFFF", STYLE["flag_start_fill"]),
+        ("⚑ финиш", "FFFFFF", STYLE["flag_end_fill"]),
     ]
     for k, (text, font_color, bg) in enumerate(legend):
         cell = ws.cell(row=lr + 1 + k, column=COL_LABEL, value=text)
