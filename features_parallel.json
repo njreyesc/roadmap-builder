@@ -1,0 +1,37 @@
+{
+  "title": "Roadmap: подключение агентов (вариант — фичи параллельно)",
+  "subtitle": "без ограничения капасити: у каждой фичи выделенные ресурсы",
+  "today": "2026-07-16",
+  "sprint_weeks": 2,
+  "work_days": 5,
+  "features": [
+    {
+      "name": "Подключение агента хронологии",
+      "priority": 1,
+      "analytics": 20,
+      "dev": 30,
+      "testing": 40
+    },
+    {
+      "name": "Подключение ESG",
+      "priority": 2,
+      "analytics": 10,
+      "dev": 10,
+      "testing": 30
+    },
+    {
+      "name": "Подключение агента историчность",
+      "priority": 3,
+      "analytics": 20,
+      "dev": 30,
+      "testing": 40
+    },
+    {
+      "name": "Подключение АЕФ",
+      "priority": 4,
+      "analytics": 10,
+      "dev": 10,
+      "testing": 30
+    }
+  ]
+}

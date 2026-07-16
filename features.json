@@ -1,0 +1,39 @@
+{
+  "title": "Roadmap: подключение агентов (финальный тест режима B)",
+  "subtitle": "оценки фаз в чд, капасити как пропускная способность спринта",
+  "today": "2026-07-16",
+  "sprint_weeks": 2,
+  "work_days": 5,
+  "capacity": {"analytics": 10, "dev": 20, "testing": 15},
+  "capacity_per": "sprint",
+  "features": [
+    {
+      "name": "Подключение агента хронологии",
+      "priority": 1,
+      "analytics": 20,
+      "dev": 30,
+      "testing": 40
+    },
+    {
+      "name": "Подключение ESG",
+      "priority": 2,
+      "analytics": 10,
+      "dev": 10,
+      "testing": 30
+    },
+    {
+      "name": "Подключение агента историчность",
+      "priority": 3,
+      "analytics": 20,
+      "dev": 30,
+      "testing": 40
+    },
+    {
+      "name": "Подключение АЕФ",
+      "priority": 4,
+      "analytics": 10,
+      "dev": 10,
+      "testing": 30
+    }
+  ]
+}
