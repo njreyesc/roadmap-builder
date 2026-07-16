@@ -11,7 +11,15 @@ from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from roadmap_common import STYLE, flag_markers, flatten_rows, group_label, load_roadmap
+from roadmap_common import (
+    STYLE,
+    feature_flags_on,
+    feature_span,
+    flag_markers,
+    flatten_rows,
+    group_label,
+    load_roadmap,
+)
 
 COL_GROUP = 1   # A — команда/направление
 COL_LABEL = 2   # B — подпись строки
@@ -250,6 +258,23 @@ def main(json_path, out_path):
         cell.border = thin_border()
         # «шест» ставим после подписи — цветная граница выигрывает и на шапке
         set_col_side(ws, col, which, STYLE[f"flag_{kind}_line"], 3, r)
+
+    # Флажки старта/финиша каждой фичи: цветная вертикальная граница по строкам
+    # фичи на левом крае первой полосы (старт) и правом крае последней (финиш).
+    # Выключаются `feature_flags: false`.
+    if feature_flags_on(data):
+        for g in data["groups"]:
+            span = feature_span(g, tl)
+            if span is None:
+                continue
+            s_i, e_i = span
+            first = group_start[id(g)]
+            n = max(1, len(g.get("rows") or [1]))
+            last = first + n  # exclusive для set_col_side
+            set_col_side(ws, FIRST_WEEK_COL + s_i, "left",
+                         STYLE["flag_start_line"], first, last)
+            set_col_side(ws, FIRST_WEEK_COL + e_i, "right",
+                         STYLE["flag_end_line"], first, last)
     if flags:
         ws.row_dimensions[3].height = 30  # под подпись флажка в две строки
 
