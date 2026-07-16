@@ -98,6 +98,7 @@ def main(json_path, out_path):
         "work": (STYLE["bar_work_fill"], STYLE["bar_work_line"]),
         "estimate": (STYLE["bar_estimate_fill"], STYLE["bar_estimate_line"]),
         "analytics": (STYLE["bar_analytics_fill"], STYLE["bar_analytics_line"]),
+        "testing": (STYLE["bar_testing_fill"], STYLE["bar_testing_line"]),
         "vacation": (STYLE["bar_vacation_fill"], STYLE["bar_vacation_line"]),
     }
     r = FIRST_DATA_ROW
@@ -229,6 +230,7 @@ def main(json_path, out_path):
         ("◇ план / под вопросом", STYLE["milestone_planned_line"], None),
         ("работы (разработка)", None, STYLE["bar_work_fill"]),
         ("аналитика (SDD)", None, STYLE["bar_analytics_fill"]),
+        ("тестирование", None, STYLE["bar_testing_fill"]),
         ("оценка т/з", None, STYLE["bar_estimate_fill"]),
         ("отпуск", None, STYLE["bar_vacation_fill"]),
     ]
