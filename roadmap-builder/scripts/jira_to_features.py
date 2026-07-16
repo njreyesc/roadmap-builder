@@ -4,9 +4,9 @@
 Колонки ищутся по ключевым словам в заголовке (регистронезависимо), поэтому
 терпим к вариациям имён ("Custom field (Аналитика)", "Analytics estimate" и т.п.).
 
-Оценки фаз читаются из ячеек вида «2 нед», «3 спринта», «3 спринта x2»:
-число + единица (спринт/неделя — по слову в ячейке или заголовке) + опц.
-множитель «xN» → people (ше). Пустая ячейка = фазы нет.
+Оценки фаз читаются из ячеек вида «2 нед», «3 спринта», «3 спринта x2», «20»:
+число + единица (спринт/неделя — по слову в ячейке или заголовке; без единицы —
+человеко-дни, чд) + опц. множитель «xN» → people. Пустая ячейка = фазы нет.
 
 Использование:
   python jira_to_features.py epics.csv features.json --start 2026-07-20 \
@@ -61,7 +61,11 @@ def num_or_int(x):
 
 
 def parse_est(cell, header):
-    """Ячейка оценки → {weeks|sprints: N, people?: M} либо None."""
+    """Ячейка оценки → {days|weeks|sprints: N, people?: M} либо None (people — люди).
+
+    Единица берётся из слова в ячейке/заголовке: «спринт» → sprints, «нед»/week →
+    weeks; без единицы — трудозатраты в человеко-днях (days, чд) по умолчанию.
+    """
     cell = (cell or "").strip()
     if not cell:
         return None
@@ -77,7 +81,12 @@ def parse_est(cell, header):
     if val <= 0:
         return None
     hay = f"{cell} {header}".lower()
-    unit = "sprints" if ("спринт" in hay or "sprint" in hay) else "weeks"
+    if "спринт" in hay or "sprint" in hay:
+        unit = "sprints"
+    elif "нед" in hay or "week" in hay:
+        unit = "weeks"
+    else:
+        unit = "days"                             # без единицы — человеко-дни (чд)
     est = {unit: num_or_int(val)}
     if people > 1:
         est["people"] = people
@@ -109,12 +118,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv_path")
     ap.add_argument("out_path")
-    ap.add_argument("--start", required=True, help="Дата старта планирования (YYYY-MM-DD)")
+    ap.add_argument("--start", default=None,
+                    help="Дата старта планирования (YYYY-MM-DD); без неё — дата запуска планировщика")
     ap.add_argument("--title", default="Roadmap (из Jira)")
     ap.add_argument("--subtitle", default=None)
     ap.add_argument("--today", default=None)
     ap.add_argument("--sprint-weeks", type=int, default=2)
-    ap.add_argument("--capacity", default=None, help="analytics:2,dev:3,testing:2")
+    ap.add_argument("--capacity", default=None,
+                    help="чд на пул: analytics:5,dev:10,testing:5")
+    ap.add_argument("--capacity-per", choices=("week", "sprint"), default="week",
+                    help="единица capacity: 'week' (чд/нед, по умолчанию) или 'sprint' (чд/спринт)")
     ap.add_argument("--allow-gaps", action="store_true")
     ap.add_argument("--keep-done", action="store_true", help="не отбрасывать закрытые эпики")
     args = ap.parse_args()
@@ -184,7 +197,9 @@ def main():
     if not features:
         sys.exit("После фильтрации не осталось ни одного эпика с оценками")
 
-    out = {"title": args.title, "start": args.start, "sprint_weeks": args.sprint_weeks}
+    out = {"title": args.title, "sprint_weeks": args.sprint_weeks}
+    if args.start:
+        out["start"] = args.start
     if args.subtitle:
         out["subtitle"] = args.subtitle
     if args.today:
@@ -192,6 +207,8 @@ def main():
     cap = parse_capacity(args.capacity)
     if cap:
         out["capacity"] = cap
+        if args.capacity_per == "sprint":
+            out["capacity_per"] = "sprint"
     if args.allow_gaps:
         out["allow_gaps"] = True
     out["features"] = features

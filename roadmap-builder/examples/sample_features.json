@@ -4,14 +4,15 @@
   "start": "2026-07-20",
   "today": "2026-07-27",
   "sprint_weeks": 2,
-  "capacity": {"analytics": 1, "dev": 2, "testing": 1},
+  "work_days": 5,
+  "capacity": {"analytics": 5, "dev": 10, "testing": 5},
   "features": [
     {
       "name": "Интеграция с IDP",
       "priority": 1,
       "owner": "Команда А",
       "services": ["IDP", "CTL"],
-      "analytics": 2,
+      "analytics": 20,
       "dev": {"sprints": 3, "people": 2, "who": "Петров"},
       "testing": {"weeks": 2, "who": "Сидорова"},
       "milestone": "Выход на КО"
@@ -23,13 +24,13 @@
       "services": ["ClickHouse"],
       "analytics": {"weeks": 1, "who": "Иванов"},
       "dev": {"sprints": 2},
-      "testing": 1
+      "testing": 5
     },
     {
       "name": "Требования к агентам. Способы вызова",
       "priority": 3,
       "after": "Лимиты ОФР",
-      "dev": {"sprints": 2, "label": "2 спринта 1 ше"},
+      "dev": {"sprints": 2, "label": "2 спринта, 20 чд"},
       "milestone": true
     }
   ]
