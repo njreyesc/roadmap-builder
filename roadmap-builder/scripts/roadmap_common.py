@@ -12,11 +12,13 @@ STYLE = {
     "milestone_done_line": "2E7D32",
     "milestone_planned_fill": "FFFFFF",   # белый
     "milestone_planned_line": "E53935",   # красный контур
-    "bar_work_fill": "F5A623",            # оранжевый
+    "bar_work_fill": "F5A623",            # оранжевый — разработка
     "bar_work_line": "C77F00",
-    "bar_estimate_fill": "FBEAB6",        # бледно-жёлтый
+    "bar_estimate_fill": "FBEAB6",        # бледно-жёлтый — оценка
     "bar_estimate_line": "E0C878",
-    "bar_vacation_fill": "FFF176",        # жёлтый
+    "bar_analytics_fill": "BDD7EE",       # голубой — аналитика (SDD)
+    "bar_analytics_line": "5B9BD5",
+    "bar_vacation_fill": "FFF176",        # жёлтый — отпуск
     "bar_vacation_line": "D4C24A",
     "note_fill": "DDEBF7",                # голубой
     "note_line": "6FA8DC",

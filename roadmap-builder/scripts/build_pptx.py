@@ -52,9 +52,20 @@ def fit_bar_text(text, w, h, sizes=(8.5, 7.5, 6.5)):
     return text[:cap] + "…", sizes[-1]
 
 
+def text_fits(text, w, h, size):
+    """Влезает ли text в плашку w×h (EMU) при кегле size без усечения."""
+    if not text:
+        return True
+    w_in = max(0.1, w / EMU_PER_IN - 0.06)
+    h_in = max(0.08, h / EMU_PER_IN - 0.02)
+    cpl = max(1, int(w_in / (size * 0.55 / 72)))
+    lines = max(1, int(h_in / (size * 1.25 / 72)))
+    return len(text) <= cpl * lines
+
+
 def add_box(slide, x, y, w, h, fill_hex=None, line_hex=None, text="", size=9,
             bold=False, color=STYLE["text"], align=PP_ALIGN.CENTER,
-            shape=MSO_SHAPE.RECTANGLE, line_w=0.75):
+            shape=MSO_SHAPE.RECTANGLE, line_w=0.75, pad_right=0):
     sp = slide.shapes.add_shape(shape, x, y, w, h)
     if fill_hex:
         sp.fill.solid()
@@ -69,7 +80,8 @@ def add_box(slide, x, y, w, h, fill_hex=None, line_hex=None, text="", size=9,
     sp.shadow.inherit = False
     tf = sp.text_frame
     tf.word_wrap = True
-    tf.margin_left = tf.margin_right = Emu(18000)
+    tf.margin_left = Emu(18000)
+    tf.margin_right = Emu(18000) + pad_right  # доп. поле справа (напр. под ромб)
     tf.margin_top = tf.margin_bottom = Emu(9000)
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     p = tf.paragraphs[0]
@@ -149,9 +161,26 @@ def main(json_path, out_path):
             ln = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, MARGIN, ry, week_x(tl.n), ry)
             ln.line.color.rgb = rgb(STYLE["grid_line"])
             ln.line.width = Pt(0.5)
-            # подпись строки
-            add_box(slide, MARGIN + GROUP_W, ry, LABEL_W, ROW_H, text=row.get("label", ""),
-                    size=8, align=PP_ALIGN.LEFT)
+            # подпись строки — ужимаем/усекаем по высоте дорожки, чтобы текст
+            # не вылезал за границу строки и не перечёркивался линией сетки
+            rlabel, rsize = fit_bar_text(row.get("label", ""), LABEL_W, ROW_H,
+                                         sizes=(8, 7.5, 7))
+            add_box(slide, MARGIN + GROUP_W, ry, LABEL_W, ROW_H, text=rlabel,
+                    size=rsize, align=PP_ALIGN.LEFT)
+
+            # пред-скан строки: недели, занятые полосами/вехами (куда нельзя
+            # ставить выноску), и недели с вехами (там резервируем место под ромб)
+            row_busy, ms_weeks = set(), set()
+            for it in row.get("items", []):
+                if it["type"] == "bar":
+                    c = tl.clip_bar(it["start"], it["end"])
+                    if c:
+                        row_busy.update(range(c[0], c[1] + 1))
+                elif it["type"] == "milestone":
+                    mi = tl.week_index(it["date"], clamp=False)
+                    if mi is not None:
+                        row_busy.add(mi)
+                        ms_weeks.add(mi)
 
             occupied = set()
             for item in row.get("items", []):
@@ -172,24 +201,63 @@ def main(json_path, out_path):
                         label = (label + " →") if label else "→"
                     if cut_l:
                         label = ("← " + label) if label else "←"
+                    style = item.get("style", "work")
                     bw = week_w * (i1 - i0 + 1) - Emu(40000)
                     bh = ROW_H - Inches(0.1)
-                    label, size = fit_bar_text(label, bw, bh)
-                    style = item.get("style", "work")
-                    add_box(slide, week_x(i0) + Emu(20000), ry + Inches(0.05),
-                            bw, bh,
+                    # если на правой неделе полосы стоит веха — резервируем место
+                    # под ромб, чтобы текст полосы его не задевал
+                    d = Inches(0.16)
+                    pad_r = (int(week_w / 2) + int(d / 2)) if i1 in ms_weeks else 0
+                    # влезает ли имя внутрь полосы (с учётом резерва под ромб)?
+                    fits = text_fits(label, bw - pad_r, bh, 6.5)
+                    in_text, in_size = fit_bar_text(label, bw - pad_r, bh) if fits else ("", 9)
+                    add_box(slide, week_x(i0) + Emu(20000), ry + Inches(0.05), bw, bh,
                             fill_hex=STYLE[f"bar_{style}_fill"], line_hex=STYLE[f"bar_{style}_line"],
-                            text=label, size=size,
-                            shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+                            text=in_text, size=in_size,
+                            shape=MSO_SHAPE.ROUNDED_RECTANGLE, pad_right=pad_r)
+                    if not fits and label:
+                        # имя не влезает в полосу — выносим его подписью в свободные
+                        # недели справа (или слева, если справа занято/нет места)
+                        fr = 0
+                        w = i1 + 1
+                        while w < tl.n and w not in row_busy and fr < 4:
+                            fr += 1
+                            w += 1
+                        fl = 0
+                        w = i0 - 1
+                        while w >= 0 and w not in row_busy and fl < 4:
+                            fl += 1
+                            w -= 1
+                        if fr >= 1:
+                            cx0 = week_x(i1 + 1) + Emu(20000)
+                            cw = week_w * fr - Emu(40000)
+                            ctext, csize = fit_bar_text(label, cw, ROW_H, sizes=(8, 7.5, 7))
+                            add_box(slide, cx0, ry, cw, ROW_H, text=ctext, size=csize,
+                                    align=PP_ALIGN.LEFT)
+                            occupied.update(range(i1 + 1, i1 + 1 + fr))
+                        elif fl >= 1:
+                            cw = week_w * fl - Emu(40000)
+                            ctext, csize = fit_bar_text(label, cw, ROW_H, sizes=(8, 7.5, 7))
+                            add_box(slide, week_x(i0 - fl) + Emu(20000), ry, cw, ROW_H,
+                                    text=ctext, size=csize, align=PP_ALIGN.RIGHT)
+                            occupied.update(range(i0 - fl, i0))
+                        else:
+                            # места нет ни справа, ни слева — печатаем усечённым внутри
+                            lt, ls = fit_bar_text(label, bw - pad_r, bh)
+                            add_box(slide, week_x(i0) + Emu(20000), ry + Inches(0.05),
+                                    bw, bh, text=lt, size=ls, color=STYLE["text"],
+                                    shape=MSO_SHAPE.RECTANGLE, pad_right=pad_r)
                 elif t == "milestone":
                     i0 = tl.week_index(item["date"], clamp=False)
                     if i0 is None:
                         print(f"! веха '{item.get('label', item['date'])}' в строке "
                               f"'{row.get('label')}' вне диапазона roadmap — пропущена")
                         continue
-                    if i0 in occupied:
-                        print(f"! перекрытие в строке '{row.get('label')}': веха "
-                              f"'{item.get('label', item['date'])}' рисуется поверх соседнего элемента")
+                    # веха на границе полосы (старт/финиш задачи): подпись
+                    # занимает ~2 недели справа от ромба — прячем её, если ромб
+                    # или зона подписи налезают на полосу, оставляя чистый
+                    # ромб-маркер; свободная веха рисуется с датой
+                    label_busy = any(w in occupied for w in (i0, i0 + 1))
                     occupied.add(i0)
                     status = item.get("status", "done")
                     d = Inches(0.16)
@@ -199,7 +267,7 @@ def main(json_path, out_path):
                     add_box(slide, cx, ry + int((ROW_H - d) / 2), d, d,
                             fill_hex=fill_hex, line_hex=line_hex, shape=MSO_SHAPE.DIAMOND,
                             line_w=1.25)
-                    if item.get("label"):
+                    if item.get("label") and not label_busy:
                         lw = min(week_w * 2, week_x(tl.n) - (cx + d))
                         ltext, lsize = fit_bar_text(item["label"], lw, ROW_H, sizes=(8, 7))
                         add_box(slide, cx + d, ry, lw, ROW_H, text=ltext,
@@ -221,15 +289,18 @@ def main(json_path, out_path):
         # Названия групп слева
         for g, k0, n in group_spans:
             gname = group_label(g)
-            gsize = 9 if len(gname) <= 90 else 8
+            # подгоняем шрифт под высоту блока группы (короткие группы из 2–3
+            # строк не должны переполняться и налезать на соседнюю)
+            gname, gsize = fit_bar_text(gname, GROUP_W, ROW_H * n, sizes=(9, 8, 7))
             add_box(slide, MARGIN, grid_top + ROW_H * k0, GROUP_W, ROW_H * n,
                     fill_hex=STYLE["group_fill"], line_hex=STYLE["grid_line"],
                     text=gname, size=gsize, bold=True, align=PP_ALIGN.LEFT)
 
-        # Линия "сегодня"
+        # Линия "сегодня" — от верха сетки (не сквозь шапку недель, чтобы
+        # не перечёркивать подпись недели; неделя уже подсвечена зелёным)
         if today_i is not None:
             x = week_x(today_i) + int(week_w / 2)
-            ln = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x, grid_top - MONTH_H - WEEK_H,
+            ln = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x, grid_top,
                                             x, grid_top + grid_h)
             ln.line.color.rgb = rgb(STYLE["today_line"])
             ln.line.width = Pt(1.75)
@@ -241,6 +312,7 @@ def main(json_path, out_path):
                 (MSO_SHAPE.DIAMOND, STYLE["milestone_done_fill"], STYLE["milestone_done_line"], "выполнено"),
                 (MSO_SHAPE.DIAMOND, STYLE["milestone_planned_fill"], STYLE["milestone_planned_line"], "план"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_work_fill"], STYLE["bar_work_line"], "работы"),
+                (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_analytics_fill"], STYLE["bar_analytics_line"], "аналитика"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_estimate_fill"], STYLE["bar_estimate_line"], "оценка т/з"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_vacation_fill"], STYLE["bar_vacation_line"], "отпуск"),
             ]
