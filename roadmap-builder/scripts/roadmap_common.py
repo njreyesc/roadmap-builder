@@ -18,6 +18,8 @@ STYLE = {
     "bar_estimate_line": "E0C878",
     "bar_analytics_fill": "BDD7EE",       # голубой — аналитика (SDD)
     "bar_analytics_line": "5B9BD5",
+    "bar_testing_fill": "E2D1F0",         # сиреневый — тестирование
+    "bar_testing_line": "9B7FC7",
     "bar_vacation_fill": "FFF176",        # жёлтый — отпуск
     "bar_vacation_line": "D4C24A",
     "note_fill": "DDEBF7",                # голубой

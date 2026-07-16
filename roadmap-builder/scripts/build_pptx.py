@@ -313,6 +313,7 @@ def main(json_path, out_path):
                 (MSO_SHAPE.DIAMOND, STYLE["milestone_planned_fill"], STYLE["milestone_planned_line"], "план"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_work_fill"], STYLE["bar_work_line"], "работы"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_analytics_fill"], STYLE["bar_analytics_line"], "аналитика"),
+                (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_testing_fill"], STYLE["bar_testing_line"], "тестирование"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_estimate_fill"], STYLE["bar_estimate_line"], "оценка т/з"),
                 (MSO_SHAPE.ROUNDED_RECTANGLE, STYLE["bar_vacation_fill"], STYLE["bar_vacation_line"], "отпуск"),
             ]
