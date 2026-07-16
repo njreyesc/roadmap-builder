@@ -135,6 +135,43 @@ def flag_markers(data):
     ]
 
 
+def feature_flags_on(data):
+    """Показывать ли флажки старта/финиша у каждой фичи (группы).
+
+    По умолчанию включены; выключаются `feature_flags: false` в корне
+    roadmap.json. Отдельно от глобальных флажков границ (`flags`)."""
+    return data.get("feature_flags", True) is not False
+
+
+def feature_span(g, tl):
+    """Видимые границы фичи в неделях: (start_idx, end_idx) либо None.
+
+    Старт — левый край самой ранней полосы/вехи фичи, финиш — правый край
+    самой поздней. Считается по всем строкам группы и прижимается к диапазону
+    roadmap; None, если у фичи нет ни одного видимого элемента.
+    """
+    lo = hi = None
+    for r in g.get("rows") or []:
+        for it in r.get("items", []):
+            t = it.get("type")
+            if t == "bar":
+                c = tl.clip_bar(it["start"], it["end"], it.get("label", ""))
+                if c is None:
+                    continue
+                i0, i1 = c[0], c[1]
+            elif t in ("milestone", "note"):
+                i0 = i1 = tl.week_index(it["date"], clamp=False)
+                if i0 is None:
+                    continue
+            else:
+                continue
+            lo = i0 if lo is None else min(lo, i0)
+            hi = i1 if hi is None else max(hi, i1)
+    if lo is None:
+        return None
+    return lo, hi
+
+
 def group_label(g):
     """Подпись группы в левой колонке: фича, владелец, дорабатываемые сервисы."""
     label = g["name"]
