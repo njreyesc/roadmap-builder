@@ -305,35 +305,23 @@ def main(json_path, out_path):
                     fill_hex=STYLE["group_fill"], line_hex=STYLE["grid_line"],
                     text=gname, size=gsize, bold=True, align=PP_ALIGN.LEFT)
 
-        # Флажки старта/финиша каждой фичи: короткий вертикальный «шест» по высоте
-        # дорожек фичи + вымпел с флажком на верхней границе (старт — слева от
-        # первой полосы, финиш — справа от последней). Выключаются
-        # `feature_flags: false`. Рисуются поверх полос.
+        # Маркеры старта/финиша каждой фичи: цветной ромбик (как в легенде) на
+        # левом крае первой полосы фичи (старт) и правом крае последней (финиш).
+        # Выключаются `feature_flags: false`. Рисуются поверх полос.
         if feature_flags_on(data):
-            penn_w, penn_h = Inches(0.16), Inches(0.15)
+            dia = Inches(0.16)
             for g, k0, n in group_spans:
                 span = feature_span(g, tl)
                 if span is None:
                     continue
                 s_i, e_i = span
-                band_top = grid_top + ROW_H * k0
-                band_bot = band_top + ROW_H * n
+                cy = grid_top + ROW_H * k0 + int((ROW_H - dia) / 2)  # центр первой строки фичи
                 for kind, edge_i in (("start", s_i), ("end", e_i + 1)):
                     fx = week_x(edge_i)
-                    fill_hex = STYLE[f"flag_{kind}_fill"]
-                    line_hex = STYLE[f"flag_{kind}_line"]
-                    ln = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, fx,
-                                                    band_top, fx, band_bot)
-                    ln.line.color.rgb = rgb(line_hex)
-                    ln.line.width = Pt(1.5)
-                    if kind == "start":
-                        px, rot = fx, 0
-                    else:
-                        px, rot = fx - penn_w, 180
-                    penn = add_box(slide, px, band_top, penn_w, penn_h,
-                                   fill_hex=fill_hex, line_hex=line_hex,
-                                   shape=MSO_SHAPE.PENTAGON, line_w=1.0)
-                    penn.rotation = rot
+                    add_box(slide, fx - int(dia / 2), cy, dia, dia,
+                            fill_hex=STYLE[f"flag_{kind}_fill"],
+                            line_hex=STYLE[f"flag_{kind}_line"],
+                            shape=MSO_SHAPE.DIAMOND, line_w=1.25)
 
         # Линия "сегодня" — от верха сетки (не сквозь шапку недель, чтобы
         # не перечёркивать подпись недели; неделя уже подсвечена зелёным)
