@@ -15,8 +15,8 @@
     Миграция; 2 нед; 4 спринта; 2 нед
 
 Имя отделяется от оценок первым из ':' '—' '–' ' - ' '|' или таб; если их нет —
-первым ';'/','. Единица оценки — «спринт» или «нед» (по умолчанию недели),
-«xN» → people, «/ Имя» → who. Строки с '#' и пустые игнорируются.
+первым ';'/','. Единица оценки — «спринт», «нед» или (по умолчанию, без единицы)
+человеко-дни (чд); «xN» → people, «/ Имя» → who. Строки с '#' и пустые игнорируются.
 
 Использование:
   python text_to_features.py features.txt features.json --start 2026-07-20 \
@@ -117,12 +117,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("txt_path")
     ap.add_argument("out_path")
-    ap.add_argument("--start", required=True, help="Дата старта планирования (YYYY-MM-DD)")
+    ap.add_argument("--start", default=None,
+                    help="Дата старта планирования (YYYY-MM-DD); без неё — дата запуска планировщика")
     ap.add_argument("--title", default="Roadmap")
     ap.add_argument("--subtitle", default=None)
     ap.add_argument("--today", default=None)
     ap.add_argument("--sprint-weeks", type=int, default=2)
-    ap.add_argument("--capacity", default=None, help="analytics:2,dev:3,testing:2")
+    ap.add_argument("--capacity", default=None,
+                    help="чд на пул: analytics:5,dev:10,testing:5")
+    ap.add_argument("--capacity-per", choices=("week", "sprint"), default="week",
+                    help="единица capacity: 'week' (чд/нед, по умолчанию) или 'sprint' (чд/спринт)")
     ap.add_argument("--allow-gaps", action="store_true")
     args = ap.parse_args()
 
@@ -140,7 +144,9 @@ def main():
     if not features:
         sys.exit("Не распозналось ни одной фичи с оценками")
 
-    out = {"title": args.title, "start": args.start, "sprint_weeks": args.sprint_weeks}
+    out = {"title": args.title, "sprint_weeks": args.sprint_weeks}
+    if args.start:
+        out["start"] = args.start
     if args.subtitle:
         out["subtitle"] = args.subtitle
     if args.today:
@@ -148,6 +154,8 @@ def main():
     cap = parse_capacity(args.capacity)
     if cap:
         out["capacity"] = cap
+        if args.capacity_per == "sprint":
+            out["capacity_per"] = "sprint"
     if args.allow_gaps:
         out["allow_gaps"] = True
     out["features"] = features
@@ -161,8 +169,12 @@ def main():
         for p, ru in (("analytics", "А"), ("dev", "Р"), ("testing", "Т")):
             if p in f:
                 e = f[p]
-                v = e.get("sprints", e.get("weeks"))
-                u = "сп" if "sprints" in e else "нед"
+                if "sprints" in e:
+                    v, u = e["sprints"], "сп"
+                elif "weeks" in e:
+                    v, u = e["weeks"], "нед"
+                else:
+                    v, u = e.get("days"), "чд"
                 ppl = f"x{e['people']}" if e.get("people", 1) > 1 else ""
                 parts.append(f"{ru}={v}{u}{ppl}")
         print(f"  {f['name']}: {', '.join(parts)}")
