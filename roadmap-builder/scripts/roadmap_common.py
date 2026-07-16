@@ -25,6 +25,10 @@ STYLE = {
     "note_fill": "DDEBF7",                # голубой
     "note_line": "6FA8DC",
     "today_line": "2E7D32",               # зелёная линия "сегодня"
+    "flag_start_fill": "4472C4",          # синий флажок «Старт»
+    "flag_start_line": "2F5597",
+    "flag_end_fill": "C00000",            # красный флажок «Финиш»
+    "flag_end_line": "7F0000",
     "header_fill": "808080",              # месяц
     "header_font": "FFFFFF",
     "week_fill": "D9D9D9",                # неделя
@@ -113,6 +117,22 @@ def load_roadmap(path):
             raise ValueError(f"В roadmap.json нет обязательного поля '{key}'")
     tl = Timeline(data["start"], data["end"])
     return data, tl
+
+
+def flag_markers(data):
+    """Флажки границ roadmap: [(kind, label)] для старта и конца.
+
+    Рисуются по умолчанию в обоих рендерерах на левой границе первой недели
+    («Старт») и правой границе последней («Финиш»). Выключаются `flags: false`
+    в корне roadmap.json; подписи переопределяются `start_label`/`end_label`.
+    Индекс границы: start → левый край недели 0, end → правый край недели n.
+    """
+    if data.get("flags", True) is False:
+        return []
+    return [
+        ("start", data.get("start_label", "Старт")),
+        ("end", data.get("end_label", "Финиш")),
+    ]
 
 
 def group_label(g):
