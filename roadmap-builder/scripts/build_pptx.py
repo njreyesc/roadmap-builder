@@ -14,7 +14,6 @@ from pptx.util import Emu, Inches, Pt
 from roadmap_common import (
     STYLE,
     feature_flags_on,
-    feature_span,
     flag_markers,
     flatten_rows,
     group_label,
@@ -306,18 +305,37 @@ def main(json_path, out_path):
                     text=gname, size=gsize, bold=True, align=PP_ALIGN.LEFT)
 
         # Маркеры старта/финиша каждой фичи: цветной ромбик (как в легенде) на
-        # левом крае первой полосы фичи (старт) и правом крае последней (финиш).
-        # Выключаются `feature_flags: false`. Рисуются поверх полос.
+        # самой ранней полосе фичи слева (старт) и на самой поздней справа
+        # (финиш) — ромбик сидит именно на той дорожке, где эта полоса, а не
+        # в пустоте первой строки. Выключаются `feature_flags: false`.
         if feature_flags_on(data):
             dia = Inches(0.16)
             for g, k0, n in group_spans:
-                span = feature_span(g, tl)
-                if span is None:
-                    continue
-                s_i, e_i = span
-                cy = grid_top + ROW_H * k0 + int((ROW_H - dia) / 2)  # центр первой строки фичи
-                for kind, edge_i in (("start", s_i), ("end", e_i + 1)):
-                    fx = week_x(edge_i)
+                start_mark = end_mark = None  # (page_row_idx, week_idx)
+                for kk in range(k0, k0 + n):
+                    for it in page[kk][1].get("items", []):
+                        t = it.get("type")
+                        if t == "bar":
+                            c = tl.clip_bar(it["start"], it["end"])
+                            if c is None:
+                                continue
+                            i0, i1 = c[0], c[1]
+                        elif t in ("milestone", "note"):
+                            i0 = i1 = tl.week_index(it["date"], clamp=False)
+                            if i0 is None:
+                                continue
+                        else:
+                            continue
+                        if start_mark is None or i0 < start_mark[1]:
+                            start_mark = (kk, i0)
+                        if end_mark is None or i1 > end_mark[1]:
+                            end_mark = (kk, i1)
+                for kind, mark, edge in (("start", start_mark, 0), ("end", end_mark, 1)):
+                    if mark is None:
+                        continue
+                    kk, wi = mark
+                    fx = week_x(wi + edge)
+                    cy = grid_top + ROW_H * kk + int((ROW_H - dia) / 2)
                     add_box(slide, fx - int(dia / 2), cy, dia, dia,
                             fill_hex=STYLE[f"flag_{kind}_fill"],
                             line_hex=STYLE[f"flag_{kind}_line"],
