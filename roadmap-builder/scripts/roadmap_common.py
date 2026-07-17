@@ -172,6 +172,39 @@ def feature_span(g, tl):
     return lo, hi
 
 
+def feature_marks(g, tl):
+    """Дорожки и недели маркеров старта/финиша фичи.
+
+    Возвращает (start_row, start_week, end_row, end_week) либо None:
+    - start_row/start_week — строка и левый край самой ранней полосы/вехи фичи;
+    - end_row/end_week — строка и правый край (индекс последней недели) самой
+      поздней. Строки — те же объекты из g["rows"], чтобы рендерер поставил
+      ромбик на нужную дорожку даже если фича разбита на несколько слайдов.
+    """
+    start = end = None  # (row_obj, week_idx)
+    for r in g.get("rows") or []:
+        for it in r.get("items", []):
+            t = it.get("type")
+            if t == "bar":
+                c = tl.clip_bar(it["start"], it["end"], it.get("label", ""))
+                if c is None:
+                    continue
+                i0, i1 = c[0], c[1]
+            elif t in ("milestone", "note"):
+                i0 = i1 = tl.week_index(it["date"], clamp=False)
+                if i0 is None:
+                    continue
+            else:
+                continue
+            if start is None or i0 < start[1]:
+                start = (r, i0)
+            if end is None or i1 > end[1]:
+                end = (r, i1)
+    if start is None:
+        return None
+    return start[0], start[1], end[0], end[1]
+
+
 def group_label(g):
     """Подпись группы в левой колонке: фича, владелец, дорабатываемые сервисы."""
     label = g["name"]

@@ -14,6 +14,7 @@ from pptx.util import Emu, Inches, Pt
 from roadmap_common import (
     STYLE,
     feature_flags_on,
+    feature_marks,
     flag_markers,
     flatten_rows,
     group_label,
@@ -306,36 +307,28 @@ def main(json_path, out_path):
 
         # Маркеры старта/финиша каждой фичи: цветной ромбик (как в легенде) на
         # самой ранней полосе фичи слева (старт) и на самой поздней справа
-        # (финиш) — ромбик сидит именно на той дорожке, где эта полоса, а не
-        # в пустоте первой строки. Выключаются `feature_flags: false`.
+        # (финиш). Позиция считается по всей фиче (feature_marks), ромбик
+        # ставится на ту же дорожку, где полоса — поэтому у фичи, разбитой на
+        # несколько слайдов, ромбик рисуется ровно один раз, на нужном слайде.
+        # Выключаются `feature_flags: false`.
         if feature_flags_on(data):
             dia = Inches(0.16)
-            for g, k0, n in group_spans:
-                start_mark = end_mark = None  # (page_row_idx, week_idx)
-                for kk in range(k0, k0 + n):
-                    for it in page[kk][1].get("items", []):
-                        t = it.get("type")
-                        if t == "bar":
-                            c = tl.clip_bar(it["start"], it["end"])
-                            if c is None:
-                                continue
-                            i0, i1 = c[0], c[1]
-                        elif t in ("milestone", "note"):
-                            i0 = i1 = tl.week_index(it["date"], clamp=False)
-                            if i0 is None:
-                                continue
-                        else:
-                            continue
-                        if start_mark is None or i0 < start_mark[1]:
-                            start_mark = (kk, i0)
-                        if end_mark is None or i1 > end_mark[1]:
-                            end_mark = (kk, i1)
-                for kind, mark, edge in (("start", start_mark, 0), ("end", end_mark, 1)):
-                    if mark is None:
+            marks = {}
+            for g, _, _ in group_spans:
+                m = feature_marks(g, tl)
+                if m is not None:
+                    marks[id(g)] = m
+            for kk, (g, row, _) in enumerate(page):
+                m = marks.get(id(g))
+                if m is None:
+                    continue
+                start_row, s_i, end_row, e_i = m
+                cy = grid_top + ROW_H * kk + int((ROW_H - dia) / 2)
+                for kind, hit, edge_i in (("start", row is start_row, s_i),
+                                          ("end", row is end_row, e_i + 1)):
+                    if not hit:
                         continue
-                    kk, wi = mark
-                    fx = week_x(wi + edge)
-                    cy = grid_top + ROW_H * kk + int((ROW_H - dia) / 2)
+                    fx = week_x(edge_i)
                     add_box(slide, fx - int(dia / 2), cy, dia, dia,
                             fill_hex=STYLE[f"flag_{kind}_fill"],
                             line_hex=STYLE[f"flag_{kind}_line"],
