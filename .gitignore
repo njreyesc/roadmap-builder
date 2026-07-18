@@ -6,3 +6,8 @@ __pycache__/
 
 # LibreOffice/Office lock files
 ~$*
+
+# Сгенерированные roadmap-файлы (в репозитории остаётся только пример
+# roadmap.pptx / roadmap.xlsx, собранный из roadmap.json)
+roadmap_*.pptx
+roadmap_*.xlsx
