@@ -1,0 +1,116 @@
+{
+  "title": "Roadmap: Агентская платформа",
+  "subtitle": "MVP — синий",
+  "start": "2025-08-04",
+  "end": "2025-11-02",
+  "today": "2025-08-14",
+  "groups": [
+    {
+      "name": "КАФО агента (Интеграция, взаимодействие)",
+      "owner": "Д. Шатыр",
+      "services": ["CTL", "ClickHouse", "СберЧат", "ЛДБР", "IDP"],
+      "rows": [
+        {"label": "Подготовлен драфт", "items": [
+          {"type": "milestone", "date": "2025-08-05", "status": "done"}
+        ]},
+        {"label": "CTL", "items": [
+          {"type": "milestone", "date": "2025-08-12", "status": "done"}
+        ]},
+        {"label": "Фронт и СберЧат", "items": [
+          {"type": "milestone", "date": "2025-08-12", "status": "done"}
+        ]},
+        {"label": "ClickHouse: безы ОК, ДКА", "items": [
+          {"type": "milestone", "date": "2025-08-12", "status": "done"},
+          {"type": "bar", "start": "2025-08-18", "end": "2025-08-24", "label": "Согласов.", "style": "work"},
+          {"type": "milestone", "date": "2025-08-26", "status": "planned"}
+        ]},
+        {"label": "ЛДБР: ДКА", "items": [
+          {"type": "milestone", "date": "2025-08-12", "status": "done"}
+        ]},
+        {"label": "IDP", "items": [
+          {"type": "milestone", "date": "2025-09-01", "status": "planned"},
+          {"type": "note", "date": "2025-09-08", "text": "Зависит от итогов Гембы"}
+        ]}
+      ]
+    },
+    {
+      "name": "Hello world [Python]",
+      "owner": "С. Славский",
+      "rows": [
+        {"label": "От разработки до ПРОМ", "items": [
+          {"type": "bar", "start": "2025-08-04", "end": "2025-08-10", "label": "Сборки", "style": "work"},
+          {"type": "milestone", "date": "2025-08-12", "status": "done"},
+          {"type": "bar", "start": "2025-08-18", "end": "2025-08-24", "label": "Тест", "style": "work"},
+          {"type": "milestone", "date": "2025-08-26", "status": "planned"}
+        ]}
+      ]
+    },
+    {
+      "name": "Требования к агентам. Способы вызова",
+      "rows": [
+        {"label": "По расписанию (оценка т/з)", "items": [
+          {"type": "bar", "start": "2025-08-18", "end": "2025-10-12", "label": "6 спринтов 2 ше", "style": "estimate"}
+        ]},
+        {"label": "С параметрами (оценка т/з)", "items": [
+          {"type": "bar", "start": "2025-08-18", "end": "2025-10-12", "label": "6 спринтов 2 ше", "style": "estimate"}
+        ]},
+        {"label": "Оба варианта (оценка т/з)", "items": [
+          {"type": "bar", "start": "2025-08-18", "end": "2025-10-26", "label": "8 спринтов 2 ше", "style": "estimate"}
+        ]}
+      ]
+    },
+    {
+      "name": "Требования к агентам. Варианты ответов",
+      "rows": [
+        {"label": "Ответ на почту (оценка т/з)", "items": [
+          {"type": "bar", "start": "2025-08-18", "end": "2025-10-05", "label": "6 спринтов 2 ше", "style": "estimate"}
+        ]}
+      ]
+    },
+    {
+      "name": "DevOps",
+      "owner": "Е. Макаров",
+      "rows": [
+        {"label": "Базовые требования", "items": [
+          {"type": "milestone", "date": "2025-08-05", "status": "done"},
+          {"type": "note", "date": "2025-08-18", "text": "При текущих вводных требования стандартные"}
+        ]}
+      ]
+    },
+    {
+      "name": "Интеграция",
+      "owner": "С. Славский ?",
+      "services": ["CTL", "СберЧат", "ClickHouse"],
+      "rows": [
+        {"label": "CTL", "items": [
+          {"type": "bar", "start": "2025-08-25", "end": "2025-09-21", "label": "4 спринта 2 ше", "style": "work"}
+        ]},
+        {"label": "СберЧат / собственный (оценка т/з)", "items": [
+          {"type": "bar", "start": "2025-08-25", "end": "2025-10-19", "label": "8 спринтов 2 ше", "style": "estimate"}
+        ]},
+        {"label": "ClickHouse", "items": [
+          {"type": "bar", "start": "2025-08-25", "end": "2025-09-21", "label": "4 спринта 2 ше", "style": "work"}
+        ]}
+      ]
+    },
+    {
+      "name": "Интеграция с IDP (RAG)",
+      "owner": "С. Славский ?",
+      "services": ["IDP"],
+      "rows": [
+        {"label": "Встреча-Гемба — 20.08.2025", "items": [
+          {"type": "milestone", "date": "2025-08-20", "status": "planned"}
+        ]},
+        {"label": "Интеграция", "items": [
+          {"type": "note", "date": "2025-08-25", "text": "Трудозатраты неочевидны"}
+        ]},
+        {"label": "оценка т/з", "items": [
+          {"type": "bar", "start": "2025-08-25", "end": "2025-10-19", "label": "8 спринтов 2 ше", "style": "estimate"}
+        ]},
+        {"label": "Рим — отпуск", "items": [
+          {"type": "bar", "start": "2025-08-04", "end": "2025-08-17", "label": "Отпуск", "style": "vacation"}
+        ]}
+      ]
+    }
+  ]
+}

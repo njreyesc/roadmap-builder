@@ -1,0 +1,19 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+*.bak
+
+# LibreOffice/Office lock files
+~$*
+
+# Сгенерированные и рабочие файлы (собираются скриптами из исходников,
+# в репозитории не хранятся — примеры лежат в roadmap-builder/examples/)
+*.pptx
+*.xlsx
+*.skill
+/roadmap*.json
+/features*.json
+
+# pytest
+.pytest_cache/

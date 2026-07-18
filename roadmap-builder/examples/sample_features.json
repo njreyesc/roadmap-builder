@@ -1,0 +1,37 @@
+{
+  "title": "Roadmap: Агентская платформа Q3 (пример)",
+  "subtitle": "сгенерировано из списка фич с оценками",
+  "start": "2026-07-20",
+  "today": "2026-07-27",
+  "sprint_weeks": 2,
+  "work_days": 5,
+  "capacity": {"analytics": 5, "dev": 10, "testing": 5},
+  "features": [
+    {
+      "name": "Интеграция с IDP",
+      "priority": 1,
+      "owner": "Команда А",
+      "services": ["IDP", "CTL"],
+      "analytics": 20,
+      "dev": {"sprints": 3, "people": 2, "who": "Петров"},
+      "testing": {"weeks": 2, "who": "Сидорова"},
+      "milestone": "Выход на КО"
+    },
+    {
+      "name": "Лимиты ОФР",
+      "priority": 2,
+      "owner": "Команда Б",
+      "services": ["ClickHouse"],
+      "analytics": {"weeks": 1, "who": "Иванов"},
+      "dev": {"sprints": 2},
+      "testing": 5
+    },
+    {
+      "name": "Требования к агентам. Способы вызова",
+      "priority": 3,
+      "after": "Лимиты ОФР",
+      "dev": {"sprints": 2, "label": "2 спринта, 20 чд"},
+      "milestone": true
+    }
+  ]
+}

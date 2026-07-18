@@ -1,0 +1,8 @@
+Issue Type,Issue key,Summary,Status,Priority,Assignee,Components,Labels,Custom field (Аналитика),Custom field (Разработка),Custom field (Тестирование),Custom field (Веха),Custom field (Зависит от)
+Epic,PLAT-100,Логирование запросов агента,Done,Medium,И. Волков,CTL,tech,,2 спринта,1 нед,,
+Epic,PLAT-101,Интеграция с IDP,In Progress,Highest,Д. Шатыр,IDP;CTL,integration,2 нед,3 спринта x2,2 нед,Выход на КО,
+Epic,PLAT-102,Лимиты ОФР,To Do,High,А. Морозова,ClickHouse,risk,1 нед,2 спринта,1 нед,,
+Epic,PLAT-103,Способы вызова агентов,To Do,High,Д. Шатыр,,agents,,2 спринта,1 нед,,PLAT-101
+Epic,PLAT-104,Отчётность по КО,Backlog,Medium,С. Гусев,BI;ClickHouse,reporting,1 нед,2 спринта,,,
+Epic,PLAT-105,Миграция СберЧат,Backlog,Medium,А. Морозова,СберЧат,migration,2 нед,4 спринта,2 нед,Готово,
+Epic,PLAT-106,Аудит доступа,Backlog,Low,С. Гусев,IDP,security,1 нед,1 спринт,1 нед,,
