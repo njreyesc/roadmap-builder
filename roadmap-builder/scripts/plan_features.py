@@ -306,11 +306,46 @@ def schedule_feature(feature, start, sprint_weeks, work_days, alloc, allow_gaps=
     return rows, end, visual_end
 
 
+def order_features(features, features_by_name):
+    """Порядок планирования: топологический по `after`, приоритет — как тайбрейк.
+
+    Предшественник (`after`) всегда идёт раньше зависимой фичи; среди фич с уже
+    выполненными зависимостями выбираем по priority (меньше = раньше), при равенстве
+    — по исходному порядку в features.json. Так сортировка по приоритету больше не
+    ломает валидные цепочки `after` (баг: приоритетная фича уезжала перед своим
+    предшественником и планировщик падал «after ещё не спланирована»).
+
+    Циклы и ссылки на неизвестную/непланируемую фичу здесь не диагностируются —
+    такие фичи отдаются в исходном порядке, а понятную ошибку выдаёт resolve_start.
+    """
+    has_priority = any("priority" in f for f in features)
+    orig_index = {id(f): i for i, f in enumerate(features)}
+    ordered, placed, remaining = [], set(), list(features)
+    while remaining:
+        ready = [f for f in remaining
+                 if not f.get("after")
+                 or f["after"] in placed
+                 or f["after"] not in features_by_name]
+        if not ready:                                # цикл/тупик — пусть решает resolve_start
+            ready = list(remaining)
+        ready.sort(key=lambda f: (f.get("priority", math.inf) if has_priority else 0,
+                                  orig_index[id(f)]))
+        pick = ready[0]
+        ordered.append(pick)
+        placed.add(pick["name"])
+        remaining.remove(pick)
+    return ordered
+
+
 def resolve_start(feature, features_by_name, global_start, finish, resolving):
     """Дата старта фичи: явный start > after: <фича> > глобальный start."""
     name = feature.get("name", "?")
     if feature.get("start"):
-        return monday(parse_date(feature["start"]))
+        start = monday(parse_date(feature["start"]))
+        if start < global_start:
+            print(f"! '{name}': start {feature['start']} раньше начала roadmap "
+                  f"{global_start.isoformat()} — фича прижата к началу roadmap")
+        return start
     after = feature.get("after")
     if after:
         if after not in features_by_name:
@@ -359,9 +394,6 @@ def main(in_path, out_path):
     allow_gaps = bool(src.get("allow_gaps", False))
 
     features = list(src["features"])
-    if any("priority" in f for f in features):
-        features.sort(key=lambda f: f.get("priority", math.inf))
-
     features_by_name = {}
     for f in features:
         if "name" not in f:
@@ -369,6 +401,10 @@ def main(in_path, out_path):
         if f["name"] in features_by_name:
             raise ValueError(f"Дубликат имени фичи: '{f['name']}'")
         features_by_name[f["name"]] = f
+
+    # Порядок планирования учитывает `after` (предшественник раньше зависимой),
+    # приоритет — тайбрейк. Иначе сортировка по priority ломала валидные цепочки.
+    features = order_features(features, features_by_name)
 
     groups = []
     finish = {}                                  # имя фичи → дата конца (для after)
