@@ -248,16 +248,24 @@ def main(json_path, out_path):
     start_col = FIRST_WEEK_COL
     end_col = FIRST_WEEK_COL + tl.n - 1
     flags = flag_markers(data)
+    # При roadmap в одну неделю старт и финиш попадают в одну колонку —
+    # группируем по колонке, чтобы объединить подписи («⚑ Старт / Финиш»)
+    # и поставить обе medium-границы, а не перезаписать первый флажок вторым.
+    flags_by_col = {}
     for kind, flabel in flags:
         col = start_col if kind == "start" else end_col
-        which = "left" if kind == "start" else "right"
-        cell = ws.cell(row=3, column=col, value=f"⚑ {flabel}\n{tl.week_label(col - FIRST_WEEK_COL)}")
-        cell.fill = fill(STYLE[f"flag_{kind}_fill"])
+        flags_by_col.setdefault(col, []).append((kind, flabel))
+    for col, col_flags in flags_by_col.items():
+        text = " / ".join(flabel for _, flabel in col_flags)
+        cell = ws.cell(row=3, column=col, value=f"⚑ {text}\n{tl.week_label(col - FIRST_WEEK_COL)}")
+        cell.fill = fill(STYLE[f"flag_{col_flags[0][0]}_fill"])
         cell.font = Font(bold=True, color="FFFFFF", size=9)
         cell.alignment = center
         cell.border = thin_border()
         # «шест» ставим после подписи — цветная граница выигрывает и на шапке
-        set_col_side(ws, col, which, STYLE[f"flag_{kind}_line"], 3, r)
+        for kind, _ in col_flags:
+            which = "left" if kind == "start" else "right"
+            set_col_side(ws, col, which, STYLE[f"flag_{kind}_line"], 3, r)
 
     # Флажки старта/финиша каждой фичи: цветная вертикальная граница по строкам
     # фичи на левом крае первой полосы (старт) и правом крае последней (финиш).
