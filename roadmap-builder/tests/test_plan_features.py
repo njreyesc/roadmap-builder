@@ -129,6 +129,35 @@ def test_main_overlap_zero_disables_default(tmp_path):
     assert items[1]["start"] == "2026-08-10"     # встык после 4 нед аналитики
 
 
+def test_main_overlap_fractional_ge_one_raises(tmp_path):
+    # 1.5 молча усекалось int() до 1 недели — теперь явная ошибка
+    with pytest.raises(ValueError, match="целое число недель"):
+        _run_main(tmp_path, {
+            "title": "t", "start": "2026-07-13", "overlap": 1.5,
+            "features": [{"name": "F", "analytics": 10, "dev": 10}],
+        })
+
+
+def test_main_overlap_dict_fractional_ge_one_raises(tmp_path):
+    with pytest.raises(ValueError, match="целое число недель"):
+        _run_main(tmp_path, {
+            "title": "t", "start": "2026-07-13",
+            "features": [{"name": "F", "analytics": 10, "dev": 10,
+                          "overlap": {"dev": 2.5}}],
+        })
+
+
+def test_main_overlap_integer_valued_float_ok(tmp_path):
+    # 2.0 — целое число недель, хоть и float: валидация пропускает
+    r = _run_main(tmp_path, {
+        "title": "t", "start": "2026-07-13", "overlap": 2.0,
+        "features": [{"name": "F", "analytics": 20, "dev": 30}],
+    })
+    items = [row["items"][0] for row in r["groups"][0]["rows"]]
+    # аналитика 4 нед, нахлёст 2 нед → dev стартует через 2 нед
+    assert items[1]["start"] == "2026-07-27"
+
+
 def test_overlap_infeasible_within_pool_raises():
     # неделя нахлёста просит 10 чд/нед, пул 8 — сдвиг не поможет, нужна ошибка
     alloc = CapacityAllocator(8, START)
