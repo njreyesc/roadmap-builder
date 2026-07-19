@@ -22,6 +22,7 @@
 """
 import json
 import math
+import os
 import sys
 from datetime import date, timedelta
 
@@ -460,9 +461,34 @@ def resolve_start(feature, features_by_name, global_start, finish):
     return global_start
 
 
+def apply_defaults(src, in_path):
+    """Подмешивает в src корневые поля из defaults.json рядом с in_path.
+
+    defaults.json — базовый сценарий (капасити, режим, спринт и т.п.), чтобы
+    не повторять его в каждом features.json. Явные поля src всегда побеждают;
+    'features' в defaults запрещён — это данные, а не сценарий.
+    """
+    defaults_path = os.path.join(os.path.dirname(os.path.abspath(in_path)),
+                                 "defaults.json")
+    if not os.path.exists(defaults_path):
+        return
+    with open(defaults_path, encoding="utf-8") as f:
+        defaults = json.load(f)
+    if not isinstance(defaults, dict) or "features" in defaults:
+        raise ValueError(
+            "defaults.json должен быть объектом корневых полей features.json "
+            "без ключа 'features'")
+    applied = sorted(k for k in defaults if k not in src)
+    for k in applied:
+        src[k] = defaults[k]
+    if applied:
+        print(f"defaults.json: подставлены {', '.join(applied)}")
+
+
 def main(in_path, out_path):
     with open(in_path, encoding="utf-8") as f:
         src = json.load(f)
+    apply_defaults(src, in_path)
     for key in ("title", "features"):
         if key not in src:
             raise ValueError(f"В {in_path} нет обязательного поля '{key}'")
@@ -566,6 +592,9 @@ def main(in_path, out_path):
         roadmap["subtitle"] = src["subtitle"]
     if src.get("today"):
         roadmap["today"] = src["today"]
+    else:
+        roadmap["today"] = date.today().isoformat()
+        print(f"today не задан — линия «сегодня» на дату запуска: {roadmap['today']}")
     # Флажки границ рисуются рендерерами по умолчанию; пробрасываем только
     # явные переопределения из features.json (выключение / свои подписи).
     for key in ("flags", "start_label", "end_label"):
