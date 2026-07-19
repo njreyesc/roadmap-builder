@@ -179,3 +179,21 @@ def test_overlap_respects_busy_pool_shifts_whole_feature():
     # фича сдвигается целиком на 1 нед: аналитика нед 1-2, dev нед 2-3
     assert got[0][1] == "2026-07-20"
     assert got[1][1] == "2026-07-27"
+
+
+def test_cli_validation_error_is_one_line_no_traceback(tmp_path):
+    # ошибки валидации из CLI — одна строка "Ошибка: ..." в stderr и exit 1,
+    # как у конвертеров, а не голый traceback
+    import subprocess
+    import sys as _sys
+    import os as _os
+
+    src = tmp_path / "features.json"
+    src.write_text(json.dumps({"title": "T", "features": []}), encoding="utf-8")
+    script = _os.path.join(_os.path.dirname(__file__), "..", "scripts", "plan_features.py")
+    res = subprocess.run(
+        [_sys.executable, script, str(src), str(tmp_path / "roadmap.json")],
+        capture_output=True, text=True)
+    assert res.returncode == 1
+    assert res.stderr.strip() == "Ошибка: Список features пуст"
+    assert "Traceback" not in res.stderr

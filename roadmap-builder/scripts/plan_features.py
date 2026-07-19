@@ -586,4 +586,8 @@ def main(in_path, out_path):
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         sys.exit("Использование: python plan_features.py features.json roadmap.json")
-    main(sys.argv[1], sys.argv[2])
+    try:
+        main(sys.argv[1], sys.argv[2])
+    except ValueError as e:
+        print(f"Ошибка: {e}", file=sys.stderr)
+        sys.exit(1)
