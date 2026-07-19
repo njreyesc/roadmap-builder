@@ -1,0 +1,12 @@
+{
+  "subtitle": "команда: 2 аналитика, 3 разработчика, 2 тестировщика; капасити 10/20/15 чд/спринт; жадный режим",
+  "sprint_weeks": 2,
+  "work_days": 5,
+  "capacity": {
+    "analytics": 10,
+    "dev": 20,
+    "testing": 15
+  },
+  "capacity_per": "sprint",
+  "allow_gaps": true
+}

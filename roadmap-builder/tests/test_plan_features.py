@@ -197,3 +197,45 @@ def test_cli_validation_error_is_one_line_no_traceback(tmp_path):
     assert res.returncode == 1
     assert res.stderr.strip() == "Ошибка: Список features пуст"
     assert "Traceback" not in res.stderr
+
+
+def test_main_defaults_json_applied(tmp_path):
+    # defaults.json рядом с входом подставляет отсутствующие корневые поля
+    (tmp_path / "defaults.json").write_text(json.dumps({
+        "capacity": {"dev": 10}, "capacity_per": "sprint",
+        "subtitle": "база",
+    }), encoding="utf-8")
+    r = _run_main(tmp_path, {
+        "title": "t", "start": "2026-07-13",
+        "features": [{"name": "F", "dev": 30}],
+    })
+    assert r["subtitle"] == "база"
+    item = r["groups"][0]["rows"][0]["items"][0]
+    # 30 чд при пуле 10 чд/спринт (5 чд/нед) = 6 нед, а не 6 нед от 1 человека
+    assert (item["start"], item["end"]) == ("2026-07-13", "2026-08-23")
+
+
+def test_main_defaults_json_explicit_wins(tmp_path):
+    # явное поле features.json побеждает defaults.json
+    (tmp_path / "defaults.json").write_text(json.dumps({
+        "capacity": {"dev": 10}, "capacity_per": "sprint",
+    }), encoding="utf-8")
+    r = _run_main(tmp_path, {
+        "title": "t", "start": "2026-07-13", "capacity": {"dev": 20},
+        "capacity_per": "sprint",
+        "features": [{"name": "F", "dev": 30}],
+    })
+    item = r["groups"][0]["rows"][0]["items"][0]
+    # пул 20 чд/спринт (10 чд/нед) → 3 нед
+    assert (item["start"], item["end"]) == ("2026-07-13", "2026-08-02")
+
+
+def test_main_defaults_json_with_features_raises(tmp_path):
+    (tmp_path / "defaults.json").write_text(json.dumps({
+        "features": [{"name": "X", "dev": 5}],
+    }), encoding="utf-8")
+    with pytest.raises(ValueError, match="defaults.json"):
+        _run_main(tmp_path, {
+            "title": "t", "start": "2026-07-13",
+            "features": [{"name": "F", "dev": 30}],
+        })
