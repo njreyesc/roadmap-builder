@@ -3,7 +3,13 @@
 Вход — согласованный список фич с оценками аналитики/разработки/тестирования
 (схема — references/features-schema.md). Фазы каждой фичи идут встык
 (без разрывов); фичи параллельны в пределах капасити пулов, не влезающие
-сдвигаются целиком. Результат — roadmap.json для build_xlsx.py / build_pptx.py.
+сдвигаются целиком. Поле overlap (глобально или у фичи) задаёт нахлёст:
+следующая фаза стартует до конца предыдущей — доля 0..1 от длительности
+предыдущей фазы или целое число недель. По умолчанию 0.5 — фаза стартует,
+когда предыдущая наполовину готова; строгую последовательность задаёт
+"overlap": 0. Объект по фазе-приёмнику — разные нахлёсты на переходах:
+{"dev": 0.5, "testing": 0.3} (не названные фазы — дефолт 0.5).
+Результат — roadmap.json для build_xlsx.py / build_pptx.py.
 
 Оценка фазы по умолчанию — трудозатраты в человеко-днях (чд): голое число
 или {days|чд|effort}. Капасити — пропускная способность пула фазы (чд/нед
@@ -23,6 +29,7 @@ from roadmap_common import monday, parse_date
 
 SPRINT_WEEKS_DEFAULT = 2
 WORK_DAYS_DEFAULT = 5
+OVERLAP_DEFAULT = 0.5    # следующая фаза стартует после половины предыдущей
 
 # (ключ в features.json, подпись строки, стиль полосы)
 PHASES = [
@@ -56,6 +63,34 @@ def scale_capacity(capacity, factor):
 
 
 DAYS_KEYS = ("days", "чд", "effort")             # алиасы трудозатрат (чд) в объекте
+
+
+def overlap_weeks(overlap, prev_dur):
+    """Нахлёст в неделях между фазой длительностью prev_dur и следующей.
+
+    overlap < 1 — доля нахлёста: следующая фаза стартует за
+    floor(prev_dur × overlap) недель до конца предыдущей (0.5 при аналитике
+    в 4 нед — разработка начинается после 2 нед аналитики). overlap >= 1 —
+    нахлёст прямо в неделях. Следующая фаза никогда не стартует раньше чем
+    через неделю после старта предыдущей (нахлёст ограничен prev_dur - 1).
+    """
+    if not overlap:
+        return 0
+    ov = math.floor(prev_dur * overlap) if overlap < 1 else int(overlap)
+    return max(0, min(ov, prev_dur - 1))
+
+
+def overlap_into(overlap, phase_key):
+    """Значение нахлёста для входа в фазу phase_key.
+
+    overlap — число (одно на все переходы) или объект по фазе-приёмнику:
+    {"dev": 0.5, "testing": 0.3} — нахлёст старта разработки с аналитикой и
+    старта тестирования с разработкой. Для фаз, не названных в объекте,
+    действует дефолт OVERLAP_DEFAULT.
+    """
+    if isinstance(overlap, dict):
+        return overlap.get(phase_key, OVERLAP_DEFAULT)
+    return overlap
 
 
 def parse_phase(spec, sprint_weeks, work_days, feature_name, phase_key, pool_rate=None):
@@ -197,6 +232,29 @@ class CapacityAllocator:
             used.append(0)
         return all(used[w] + load <= cap for w in range(i, i + dur))
 
+    def fits_all(self, items):
+        """Влезает ли набор фаз [(phase_key, load, i, dur), ...] одновременно.
+
+        В отличие от поочерёдных fits(), суммирует нагрузку самих фаз набора:
+        при нахлёсте две фазы одной фичи могут делить неделю одного пула
+        (общий capacity-числом), и по отдельности каждая влезла бы, а вместе — нет.
+        """
+        demand = {}                              # пул → {неделя: чд/нед набора}
+        for phase_key, load, i, dur in items:
+            pool = self._pool(phase_key)
+            if pool is None:
+                continue
+            weeks = demand.setdefault(pool, {})
+            for w in range(i, i + dur):
+                weeks[w] = weeks.get(w, 0) + load
+        for pool, weeks in demand.items():
+            used, cap = self.usage[pool], self.caps[pool]
+            for w, d in weeks.items():
+                u = used[w] if w < len(used) else 0
+                if u + d > cap:
+                    return False
+        return True
+
     def reserve(self, phase_key, load, i, dur):
         pool = self._pool(phase_key)
         if pool is None:
@@ -214,13 +272,16 @@ class CapacityAllocator:
         return self.origin + timedelta(weeks=i)
 
 
-def schedule_feature(feature, start, sprint_weeks, work_days, alloc, allow_gaps=False):
+def schedule_feature(feature, start, sprint_weeks, work_days, alloc, allow_gaps=False,
+                     overlap=0):
     """Раскладка фаз фичи от start (понедельник) с учётом капасити.
 
     По умолчанию фазы идут встык (фичу нельзя разрывать): вся цепочка
     аналитика → разработка → тестирование сдвигается целиком до первого окна,
     где каждый пул свободен в свои недели. allow_gaps=True — старый жадный
     режим: каждая фаза стартует в первый свободный понедельник по отдельности.
+    overlap > 0 разрешает нахлёст фаз: следующая стартует до конца предыдущей
+    (см. overlap_weeks).
 
     Возвращает (rows, end, visual_end): строки roadmap, дату конца фичи
     (для after) и правую границу с запасом под подпись вехи (для end roadmap).
@@ -239,11 +300,23 @@ def schedule_feature(feature, start, sprint_weeks, work_days, alloc, allow_gaps=
         raise ValueError(
             f"Фича '{name}': нет ни одной фазы (analytics/dev/testing) — нечего планировать")
 
+    # Смещение старта каждой фазы от старта фичи: следующая фаза — через
+    # dur - нахлёст недель после старта предыдущей (без overlap — встык).
+    # Нахлёст берётся по фазе-приёмнику (overlap_into): вход в dev и вход в
+    # testing могут отличаться.
+    offsets = []
+    off = 0
+    for idx, (_, _, _, dur, _, _) in enumerate(phases):
+        offsets.append(off)
+        if idx + 1 < len(phases):
+            next_key = phases[idx + 1][0]
+            off += dur - overlap_weeks(overlap_into(overlap, next_key), dur)
+
     base = alloc.week_idx(monday(start))
     starts = []                                  # индекс недели старта каждой фазы
     if allow_gaps:
         i = base
-        for key, row_label, _, dur, _, load in phases:
+        for idx, (key, row_label, _, dur, _, load) in enumerate(phases):
             j = i
             while not alloc.fits(key, load, j, dur):
                 j += 1
@@ -251,26 +324,38 @@ def schedule_feature(feature, start, sprint_weeks, work_days, alloc, allow_gaps=
                 print(f"  ~ '{name}' / {row_label}: сдвиг на {j - i} нед (капасити)")
             alloc.reserve(key, load, j, dur)
             starts.append(j)
-            i = j + dur
+            if idx + 1 < len(phases):
+                next_key = phases[idx + 1][0]
+                i = j + dur - overlap_weeks(overlap_into(overlap, next_key), dur)
     else:
+        # Нахлёст может сделать фичу нереализуемой в принципе: её собственные
+        # фазы в неделю нахлёста просят больше пула, чем в нём есть, — сдвиг
+        # старта тут не помогает, поиск окна не завершился бы никогда.
+        own = {}                                 # пул → {смещение: чд/нед фаз фичи}
+        for (key, _, _, dur, _, load), off in zip(phases, offsets):
+            pool = alloc._pool(key)
+            if pool is None:
+                continue
+            weeks = own.setdefault(pool, {})
+            for w in range(off, off + dur):
+                weeks[w] = weeks.get(w, 0) + load
+        for pool, weeks in own.items():
+            peak = max(weeks.values())
+            if peak > alloc.caps[pool]:
+                raise ValueError(
+                    f"Фича '{name}': при нахлёсте фазы вместе требуют "
+                    f"{fmt_num(peak)} чд/нед в пуле '{pool}', а капасити всего "
+                    f"{fmt_num(alloc.caps[pool])} чд/нед — уменьши overlap или увеличь пул")
         t = base
-        while True:
-            off, ok = 0, True
-            for key, _, _, dur, _, load in phases:
-                if not alloc.fits(key, load, t + off, dur):
-                    ok = False
-                    break
-                off += dur
-            if ok:
-                break
+        while not alloc.fits_all(
+                [(key, load, t + off, dur)
+                 for (key, _, _, dur, _, load), off in zip(phases, offsets)]):
             t += 1
         if t > base:
             print(f"  ~ '{name}': старт сдвинут на {t - base} нед (капасити, фазы без разрывов)")
-        off = 0
-        for key, _, _, dur, _, load in phases:
+        for (key, _, _, dur, _, load), off in zip(phases, offsets):
             alloc.reserve(key, load, t + off, dur)
             starts.append(t + off)
-            off += dur
 
     rows = []
     end = None
@@ -287,7 +372,8 @@ def schedule_feature(feature, start, sprint_weeks, work_days, alloc, allow_gaps=
                 "style": style,
             }],
         })
-        end = bar_end
+        # при нахлёсте последняя по списку фаза не обязана кончаться последней
+        end = bar_end if end is None else max(end, bar_end)
 
     visual_end = end
     ms = feature.get("milestone")
@@ -393,6 +479,30 @@ def main(in_path, out_path):
     alloc = CapacityAllocator(capacity, global_start)
     allow_gaps = bool(src.get("allow_gaps", False))
 
+    def check_overlap(value, where):
+        if isinstance(value, dict):
+            allowed = {k for k, _, _ in PHASES}
+            unknown = set(value) - allowed
+            if unknown:
+                raise ValueError(
+                    f"{where}: overlap — неизвестные фазы {sorted(unknown)}; "
+                    f"допустимы {sorted(allowed)} (фаза-приёмник нахлёста)")
+            for k, v in value.items():
+                if not isinstance(v, (int, float)) or v < 0:
+                    raise ValueError(
+                        f"{where}: overlap['{k}'] должно быть числом >= 0, получено: {v!r}")
+            return value
+        if not isinstance(value, (int, float)) or value < 0:
+            raise ValueError(
+                f"{where}: overlap должно быть числом >= 0 (доля <1 или недели) "
+                f"или объектом по фазам, получено: {value!r}")
+        return value
+
+    overlap_global = check_overlap(src.get("overlap", OVERLAP_DEFAULT), in_path)
+    if "overlap" not in src:
+        print(f"overlap не задан — по умолчанию {OVERLAP_DEFAULT}: следующая фаза "
+              f"стартует после половины предыдущей (\"overlap\": 0 — фазы встык)")
+
     features = list(src["features"])
     features_by_name = {}
     for f in features:
@@ -411,8 +521,10 @@ def main(in_path, out_path):
     overall_end = global_start
     for f in features:
         start = resolve_start(f, features_by_name, global_start, finish, {f["name"]})
+        overlap = (check_overlap(f["overlap"], f"Фича '{f['name']}'")
+                   if "overlap" in f else overlap_global)
         rows, end, visual_end = schedule_feature(
-            f, start, sprint_weeks, work_days, alloc, allow_gaps)
+            f, start, sprint_weeks, work_days, alloc, allow_gaps, overlap)
         finish[f["name"]] = end
         overall_end = max(overall_end, visual_end)
         group = {"name": f["name"], "rows": rows}
