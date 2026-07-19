@@ -21,7 +21,7 @@
 Использование:
   python text_to_features.py features.txt features.json --start 2026-07-20 \
       [--title "..."] [--sprint-weeks 2] [--today ...] \
-      [--capacity analytics:2,dev:3,testing:2] [--allow-gaps]
+      [--capacity analytics:10,dev:15,testing:10] [--allow-gaps]
 """
 import argparse
 import json
@@ -39,10 +39,18 @@ PHASE_KW = [
 SINGLE = {"а": "analytics", "a": "analytics", "р": "dev", "d": "dev",
           "т": "testing", "t": "testing"}
 
+# Разделитель ячеек оценок: ';' всегда, ',' — если не между цифрами
+# (десятичная запятая «0,5 нед» не рвётся).
+EST_SPLIT = r";|(?<!\d),|,(?!\d)"
+
 
 def label_of(chunk):
-    """Фаза чанка по метке (слово или одиночная буква) либо None."""
-    low = chunk.strip().lower()
+    """Фаза чанка по метке (слово или одиночная буква) либо None.
+
+    Хвост «/ Имя» — исполнитель, не метка: иначе фамилия вроде «Devyatov»
+    ложно переключала строку в подписанную форму.
+    """
+    low = chunk.split("/", 1)[0].strip().lower()
     for ph, kws in PHASE_KW:
         if any(k in low for k in kws):
             return ph
@@ -65,17 +73,29 @@ def parse_chunk(x, phase):
 
 
 def split_name(line):
-    """(name, [items]) — отделяет имя фичи от списка ячеек оценок."""
+    """(name, [items]) — отделяет имя фичи от списка ячеек оценок.
+
+    Двоеточие может встречаться и в имени («Интеграция: этап 1: 5 чд, …»),
+    поэтому из разделителей до первой ячейки оценок берётся ПОСЛЕДНИЙ — кроме
+    случая, когда уже первый даёт чанк с меткой фазы (подписанная форма
+    «Фича: аналитика 2 нед, …»).
+    """
     if "|" in line or "\t" in line:
         parts = re.split(r"\||\t", line)
         return parts[0].strip(), [p.strip() for p in parts[1:]]
-    m = re.search(r"\s—\s|\s–\s|:\s|\s-\s", line)
-    if m:
+    seps = list(re.finditer(r"\s—\s|\s–\s|:\s|\s-\s", line))
+    if seps:
+        first_chunk_end = re.search(EST_SPLIT, line)
+        limit = first_chunk_end.start() if first_chunk_end else len(line)
+        before = [m for m in seps if m.start() < limit] or seps[:1]
+        m = before[0]
+        if len(before) > 1 and label_of(line[m.end():limit]) is None:
+            m = before[-1]
         name = line[:m.start()].strip()
         rest = line[m.end():]
-        return name, [p.strip() for p in re.split(r"[;,]", rest)]
-    if ";" in line or "," in line:
-        parts = re.split(r"[;,]", line)
+        return name, [p.strip() for p in re.split(EST_SPLIT, rest)]
+    parts = re.split(EST_SPLIT, line)
+    if len(parts) > 1:
         return parts[0].strip(), [p.strip() for p in parts[1:]]
     return line.strip(), []
 
@@ -113,7 +133,7 @@ def parse_line(line, lineno):
     return feat
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("txt_path")
     ap.add_argument("out_path")
@@ -128,18 +148,23 @@ def main():
     ap.add_argument("--capacity-per", choices=("week", "sprint"), default="week",
                     help="единица capacity: 'week' (чд/нед, по умолчанию) или 'sprint' (чд/спринт)")
     ap.add_argument("--allow-gaps", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     with open(args.txt_path, encoding="utf-8") as f:
         lines = f.readlines()
 
     features = []
+    seen_lines = {}    # имя фичи → номер строки (планировщик различает фичи по имени)
     for i, raw in enumerate(lines, 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
         feat = parse_line(line, i)
         if feat:
+            if feat["name"] in seen_lines:
+                sys.exit(f"строка {i}: фича '{feat['name']}' уже была в строке "
+                         f"{seen_lines[feat['name']]} — имена фич должны быть уникальны")
+            seen_lines[feat["name"]] = i
             features.append(feat)
     if not features:
         sys.exit("Не распозналось ни одной фичи с оценками")
