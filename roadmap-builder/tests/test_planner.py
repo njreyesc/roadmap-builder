@@ -151,6 +151,32 @@ def test_no_priority_preserves_input_order():
     assert order == ["first", "second", "third"]
 
 
+def test_after_cycle_raises_with_cycle_path():
+    feats = [
+        {"name": "A", "after": "B", "dev": 5},
+        {"name": "B", "after": "A", "dev": 5},
+    ]
+    with pytest.raises(ValueError, match=r"Цикл в after: A -> B -> A"):
+        order_features(feats, _by_name(feats))
+
+
+def test_after_self_cycle_raises():
+    feats = [{"name": "A", "after": "A", "dev": 5}]
+    with pytest.raises(ValueError, match=r"Цикл в after: A -> A"):
+        order_features(feats, _by_name(feats))
+
+
+def test_after_cycle_reported_even_when_walk_starts_outside():
+    # C сама не в цикле, но ждёт его — в ошибке именно цикл A -> B -> A, не C
+    feats = [
+        {"name": "C", "after": "A", "dev": 5},
+        {"name": "A", "after": "B", "dev": 5},
+        {"name": "B", "after": "A", "dev": 5},
+    ]
+    with pytest.raises(ValueError, match=r"Цикл в after: A -> B -> A"):
+        order_features(feats, _by_name(feats))
+
+
 def test_after_chain_topologically_ordered():
     feats = [
         {"name": "C", "after": "B", "dev": 5},
@@ -218,7 +244,23 @@ def test_main_self_cycle_raises(tmp_path):
     }
     inp = tmp_path / "in.json"
     inp.write_text(json.dumps(src), encoding="utf-8")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Цикл в after"):
+        main(str(inp), str(tmp_path / "out.json"))
+
+
+def test_main_after_cycle_raises_clear_error(tmp_path):
+    # раньше падало с «after='B' ещё не спланирована — перечисли фичи так,
+    # чтобы предшественник шёл раньше», хотя перестановка при цикле не поможет
+    src = {
+        "title": "T", "start": "2026-07-20",
+        "features": [
+            {"name": "A", "after": "B", "dev": 5},
+            {"name": "B", "after": "A", "dev": 5},
+        ],
+    }
+    inp = tmp_path / "in.json"
+    inp.write_text(json.dumps(src), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"Цикл в after: A -> B -> A"):
         main(str(inp), str(tmp_path / "out.json"))
 
 

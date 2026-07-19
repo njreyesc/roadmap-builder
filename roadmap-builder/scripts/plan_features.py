@@ -71,8 +71,10 @@ def overlap_weeks(overlap, prev_dur):
     overlap < 1 — доля нахлёста: следующая фаза стартует за
     floor(prev_dur × overlap) недель до конца предыдущей (0.5 при аналитике
     в 4 нед — разработка начинается после 2 нед аналитики). overlap >= 1 —
-    нахлёст прямо в неделях. Следующая фаза никогда не стартует раньше чем
-    через неделю после старта предыдущей (нахлёст ограничен prev_dur - 1).
+    нахлёст прямо в неделях (целое число — дробные значения >= 1 отсекает
+    валидация входа, см. check_overlap в main). Следующая фаза никогда не
+    стартует раньше чем через неделю после старта предыдущей (нахлёст
+    ограничен prev_dur - 1).
     """
     if not overlap:
         return 0
@@ -401,8 +403,10 @@ def order_features(features, features_by_name):
     ломает валидные цепочки `after` (баг: приоритетная фича уезжала перед своим
     предшественником и планировщик падал «after ещё не спланирована»).
 
-    Циклы и ссылки на неизвестную/непланируемую фичу здесь не диагностируются —
-    такие фичи отдаются в исходном порядке, а понятную ошибку выдаёт resolve_start.
+    Цикл в after диагностируется здесь: если ни одна оставшаяся фича не готова,
+    значит все они ждут друг друга — перестановка списка не поможет, выдаём
+    «Цикл в after: A -> B -> A». Ссылки на неизвестную фичу отдаются в исходном
+    порядке — понятную ошибку выдаёт resolve_start.
     """
     has_priority = any("priority" in f for f in features)
     orig_index = {id(f): i for i, f in enumerate(features)}
@@ -412,8 +416,17 @@ def order_features(features, features_by_name):
                  if not f.get("after")
                  or f["after"] in placed
                  or f["after"] not in features_by_name]
-        if not ready:                                # цикл/тупик — пусть решает resolve_start
-            ready = list(remaining)
+        if not ready:
+            # Каждая оставшаяся фича ждёт другую оставшуюся — идём по after,
+            # пока не вернёмся в уже пройденную: это и есть цикл.
+            node = remaining[0]["name"]
+            path, pos = [], {}
+            while node not in pos:
+                pos[node] = len(path)
+                path.append(node)
+                node = features_by_name[node]["after"]
+            cycle = path[pos[node]:] + [node]
+            raise ValueError(f"Цикл в after: {' -> '.join(cycle)}")
         ready.sort(key=lambda f: (f.get("priority", math.inf) if has_priority else 0,
                                   orig_index[id(f)]))
         pick = ready[0]
@@ -423,8 +436,11 @@ def order_features(features, features_by_name):
     return ordered
 
 
-def resolve_start(feature, features_by_name, global_start, finish, resolving):
-    """Дата старта фичи: явный start > after: <фича> > глобальный start."""
+def resolve_start(feature, features_by_name, global_start, finish):
+    """Дата старта фичи: явный start > after: <фича> > глобальный start.
+
+    Циклы в after сюда не доходят — их отсеивает order_features.
+    """
     name = feature.get("name", "?")
     if feature.get("start"):
         start = monday(parse_date(feature["start"]))
@@ -436,8 +452,6 @@ def resolve_start(feature, features_by_name, global_start, finish, resolving):
     if after:
         if after not in features_by_name:
             raise ValueError(f"Фича '{name}': after ссылается на неизвестную фичу '{after}'")
-        if after in resolving:
-            raise ValueError(f"Цикл в after: {' -> '.join([*resolving, after])}")
         if after not in finish:
             raise ValueError(
                 f"Фича '{name}': after='{after}' ещё не спланирована — "
@@ -479,6 +493,15 @@ def main(in_path, out_path):
     alloc = CapacityAllocator(capacity, global_start)
     allow_gaps = bool(src.get("allow_gaps", False))
 
+    def check_overlap_value(v, where):
+        if not isinstance(v, (int, float)) or v < 0:
+            raise ValueError(f"{where} должно быть числом >= 0, получено: {v!r}")
+        # 1.5 молча превратилось бы в int() = 1 неделю — лучше явная ошибка
+        if v >= 1 and not float(v).is_integer():
+            raise ValueError(
+                f"{where}: значение >= 1 — целое число недель нахлёста, "
+                f"получено: {v!r} (доля от предыдущей фазы должна быть < 1)")
+
     def check_overlap(value, where):
         if isinstance(value, dict):
             allowed = {k for k, _, _ in PHASES}
@@ -488,14 +511,13 @@ def main(in_path, out_path):
                     f"{where}: overlap — неизвестные фазы {sorted(unknown)}; "
                     f"допустимы {sorted(allowed)} (фаза-приёмник нахлёста)")
             for k, v in value.items():
-                if not isinstance(v, (int, float)) or v < 0:
-                    raise ValueError(
-                        f"{where}: overlap['{k}'] должно быть числом >= 0, получено: {v!r}")
+                check_overlap_value(v, f"{where}: overlap['{k}']")
             return value
-        if not isinstance(value, (int, float)) or value < 0:
+        if not isinstance(value, (int, float)):
             raise ValueError(
                 f"{where}: overlap должно быть числом >= 0 (доля <1 или недели) "
                 f"или объектом по фазам, получено: {value!r}")
+        check_overlap_value(value, f"{where}: overlap")
         return value
 
     overlap_global = check_overlap(src.get("overlap", OVERLAP_DEFAULT), in_path)
@@ -520,7 +542,7 @@ def main(in_path, out_path):
     finish = {}                                  # имя фичи → дата конца (для after)
     overall_end = global_start
     for f in features:
-        start = resolve_start(f, features_by_name, global_start, finish, {f["name"]})
+        start = resolve_start(f, features_by_name, global_start, finish)
         overlap = (check_overlap(f["overlap"], f"Фича '{f['name']}'")
                    if "overlap" in f else overlap_global)
         rows, end, visual_end = schedule_feature(

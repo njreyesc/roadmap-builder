@@ -11,10 +11,11 @@
 Использование:
   python jira_to_features.py epics.csv features.json --start 2026-07-20 \
       [--title "..."] [--sprint-weeks 2] [--today 2026-07-16] \
-      [--capacity analytics:2,dev:3,testing:2] [--allow-gaps]
+      [--capacity analytics:10,dev:15,testing:10] [--allow-gaps]
 """
 import argparse
 import csv
+import io
 import json
 import re
 import sys
@@ -28,6 +29,18 @@ PRIORITY_RANK = {
     "lowest": 5, "trivial": 5,
 }
 DONE_STATUSES = {"done", "closed", "resolved", "cancelled", "canceled", "готово", "закрыт"}
+# Однословные статусы сравниваются по основе слова, чтобы ловить грамматические
+# варианты («закрыто», «отменён», «выполнена»…). Многословные («готово к
+# разработке») закрытыми не считаются.
+_DONE_STEM_RE = re.compile(
+    r"^(?:закрыт|отмен[её]н|готов|выполнен|решен|решён|заверш[её]н"
+    r"|clos|resolv|cancel)[а-яёa-z]*$|^done$")
+
+
+def is_done_status(status):
+    """True, если статус означает закрытый/отменённый эпик."""
+    s = (status or "").strip().lower()
+    return s in DONE_STATUSES or bool(_DONE_STEM_RE.match(s))
 
 # Ключевые слова для поиска колонок (в нижнем регистре, по подстроке)
 COL_KEYS = {
@@ -47,11 +60,19 @@ COL_KEYS = {
 
 
 def find_col(headers, keys):
-    """Первый заголовок, содержащий любое из ключевых слов."""
-    for h in headers:
-        low = (h or "").lower()
+    """Заголовок под ключевые слова: сперва точное совпадение, потом по началу слова.
+
+    Совпадение по произвольной подстроке не годится: «Latest comment» содержит
+    «test» и захватывался как колонка тестирования. Ключ должен совпадать с
+    заголовком целиком либо стоять в начале слова («аналит» → «Аналитика»).
+    """
+    lows = [(h, (h or "").strip().lower()) for h in headers]
+    for h, low in lows:
+        if low in keys:
+            return h
+    for h, low in lows:
         for k in keys:
-            if k in low:
+            if re.search(r"(?<!\w)" + re.escape(k), low):
                 return h
     return None
 
@@ -70,7 +91,7 @@ def parse_est(cell, header):
     if not cell:
         return None
     people = 1
-    m = re.search(r"[x×]\s*(\d+)", cell)
+    m = re.search(r"[x×хXХ]\s*(\d+)", cell)   # латинская x/X, «×» и кириллическая х/Х
     if m:
         people = int(m.group(1))
         cell = cell[:m.start()].strip()
@@ -110,11 +131,38 @@ def parse_capacity(spec):
         k = k.strip().lower()
         if k not in alias:
             sys.exit(f"capacity: неизвестный пул '{k}' (допустимо analytics/dev/testing)")
-        out[alias[k]] = num_or_int(float(v))
+        try:
+            val = float(v)
+        except ValueError:
+            sys.exit(f"capacity: у пула '{k}' ожидается число чд после ':', "
+                     f"получено '{v.strip()}' (пример: dev:15)")
+        out[alias[k]] = num_or_int(val)
     return out
 
 
-def main():
+def read_csv_rows(csv_path):
+    """Строки CSV с автодетектом разделителя (',' или ';').
+
+    Jira в русской локали выгружает CSV через ';' — при разборе запятой такой
+    файл превращался в одну колонку-«кашу» без единой ошибки.
+    """
+    with open(csv_path, encoding="utf-8-sig", newline="") as f:
+        text = f.read()
+    first_line = text.splitlines()[0] if text.strip() else ""
+    delimiter = ","
+    try:
+        delimiter = csv.Sniffer().sniff(first_line, delimiters=",;\t").delimiter
+    except csv.Error:
+        if ";" in first_line and "," not in first_line:
+            delimiter = ";"
+    rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
+    if rows and len(rows[0]) == 1 and re.search(r"[;,\t]", next(iter(rows[0]))):
+        sys.exit("CSV распознался как одна колонка — не смог определить разделитель. "
+                 "Пересохраните выгрузку с разделителем ',' или ';'.")
+    return rows
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("csv_path")
     ap.add_argument("out_path")
@@ -130,10 +178,9 @@ def main():
                     help="единица capacity: 'week' (чд/нед, по умолчанию) или 'sprint' (чд/спринт)")
     ap.add_argument("--allow-gaps", action="store_true")
     ap.add_argument("--keep-done", action="store_true", help="не отбрасывать закрытые эпики")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
-    with open(args.csv_path, encoding="utf-8-sig", newline="") as f:
-        rows = list(csv.DictReader(f))
+    rows = read_csv_rows(args.csv_path)
     if not rows:
         sys.exit("CSV пуст")
     headers = list(rows[0].keys())
@@ -144,10 +191,7 @@ def main():
     if not any(col[p] for p in ("analytics", "dev", "testing")):
         sys.exit("Не нашёл ни одной колонки оценки фаз (аналитика/разработка/тестирование)")
 
-    key_to_name = {}
-    for r in rows:
-        if col["key"] and r.get(col["key"]):
-            key_to_name[r[col["key"]].strip()] = (r.get(col["summary"]) or "").strip()
+    key_to_name = {}    # ключ Jira → имя, только по эпикам, попавшим в план
 
     features = []
     skipped = []
@@ -160,7 +204,7 @@ def main():
             skipped.append(f"{name} (тип '{itype}')")
             continue
         status = (r.get(col["status"]) or "").strip().lower() if col["status"] else ""
-        if not args.keep_done and status in DONE_STATUSES:
+        if not args.keep_done and is_done_status(status):
             skipped.append(f"{name} (статус '{status}')")
             continue
 
@@ -186,16 +230,34 @@ def main():
         if col["milestone"] and (r.get(col["milestone"]) or "").strip():
             feat["milestone"] = r[col["milestone"]].strip()
         if col["after"] and (r.get(col["after"]) or "").strip():
-            dep_key = split_multi(r[col["after"]])[0]
-            dep_name = key_to_name.get(dep_key)
-            if dep_name and dep_name != name:
-                feat["after"] = dep_name
-            else:
-                print(f"! '{name}': зависимость '{dep_key}' не найдена среди эпиков — пропущена")
+            feat["_dep_key"] = split_multi(r[col["after"]])[0]
+        if col["key"] and (r.get(col["key"]) or "").strip():
+            key_to_name[r[col["key"]].strip()] = name
         features.append(feat)
 
     if not features:
         sys.exit("После фильтрации не осталось ни одного эпика с оценками")
+
+    dups = {n for n in (f["name"] for f in features)
+            if sum(f["name"] == n for f in features) > 1}
+    if dups:
+        sys.exit("Дубликаты имён эпиков: " + "; ".join(sorted(dups)) +
+                 ". Планировщик различает фичи по имени — переименуйте эпики в CSV.")
+
+    # Зависимости разрешаются после фильтрации: after на отброшенный (Done,
+    # не-эпик, без оценок) эпик отбрасывается с предупреждением, а не уходит
+    # в features.json битой ссылкой, роняющей plan_features.py.
+    included = {f["name"] for f in features}
+    for feat in features:
+        dep_key = feat.pop("_dep_key", None)
+        if dep_key is None:
+            continue
+        dep_name = key_to_name.get(dep_key)
+        if dep_name and dep_name != feat["name"] and dep_name in included:
+            feat["after"] = dep_name
+        else:
+            print(f"! '{feat['name']}': зависимость '{dep_key}' не найдена "
+                  f"среди планируемых эпиков — пропущена")
 
     out = {"title": args.title, "sprint_weeks": args.sprint_weeks}
     if args.start:

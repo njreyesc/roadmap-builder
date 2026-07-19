@@ -109,7 +109,7 @@
 | Пользователь явно сказал: одна команда с конечной пропускной способностью | задать `capacity` + `capacity_per` |
 
 Оба конвертера (`text_to_features.py`, `jira_to_features.py`) задают `capacity`
-флагом `--capacity analytics:10,dev:25,testing:10` (и `--capacity-per sprint`).
+флагом `--capacity analytics:10,dev:15,testing:10` (и `--capacity-per sprint`).
 Флаг опционален: без него ресурсы не ограничены — это дефолт.
 
 ---
